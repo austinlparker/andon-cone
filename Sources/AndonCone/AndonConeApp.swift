@@ -2,28 +2,47 @@ import SwiftUI
 
 @main
 struct AndonConeApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @StateObject private var model = PlayerModel.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
-        MenuBarExtra {
-            MenuContentView(model: appDelegate.model)
-        } label: {
-            Image(systemName: "dot.radiowaves.left.and.right")
+        mainWindow
+    }
+
+    private var mainWindow: some Scene {
+        WindowGroup {
+            RadioAppView()
+                .environmentObject(model)
+                .task {
+                    model.start()
+                }
+                .onChange(of: scenePhase) { newPhase in
+                    if newPhase == .active {
+                        model.refreshAllMetadata()
+                    }
+                }
         }
-        .menuBarExtraStyle(.window)
+        #if os(macOS)
+        .defaultSize(width: 980, height: 680)
+        .commands {
+            PlayerCommands(model: model)
+        }
+        #endif
     }
+
 }
 
-@MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
-    let model = PlayerModel()
+#if os(macOS)
+private struct PlayerCommands: Commands {
+    let model: PlayerModel
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
-        model.start()
-    }
-
-    func applicationWillTerminate(_ notification: Notification) {
-        model.shutdown()
+    var body: some Commands {
+        CommandMenu("Player") {
+            Button(model.isPlaying ? "Pause" : "Play") {
+                model.togglePlayback()
+            }
+            .keyboardShortcut(.space, modifiers: [])
+        }
     }
 }
+#endif

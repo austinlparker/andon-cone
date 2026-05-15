@@ -26,7 +26,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key>
   <string>Andon Cone</string>
   <key>CFBundleIdentifier</key>
-  <string>io.honeycomb.andoncone</string>
+  <string>io.aparker.andoncone</string>
   <key>CFBundleName</key>
   <string>Andon Cone</string>
   <key>CFBundleDisplayName</key>
@@ -39,8 +39,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <string>1</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
-  <key>LSUIElement</key>
-  <true/>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.music</string>
   <key>NSHighResolutionCapable</key>
   <true/>
 </dict>

@@ -1,6 +1,6 @@
 # Andon Cone
 
-A tiny macOS menu bar app for listening to the Andon FM Live365 streams without keeping the web page open.
+A SwiftUI radio app for listening to the Andon FM streams without keeping the web page open. It supports iPhone, iPad, and macOS as native apps from one shared codebase. The iOS target also contains CarPlay scene code that can be enabled after Apple approves the managed CarPlay Audio entitlement.
 
 ## Streams
 
@@ -15,25 +15,44 @@ The stream URLs are embedded in the server-rendered data on `https://andonlabs.c
 
 ## Metadata
 
-The app polls two Andon Labs endpoints every 30 seconds:
+The app polls two Andon Labs endpoints every 20 seconds:
 
 - `https://os.andonlabs.com/api/public/radio/metadata` — current track title and artist per station, keyed by station UUID.
 - `https://os.andonlabs.com/api/public/radio/stats` — listener counts, current and upcoming programming blocks, recent station tweets, top tracks of the week, station artwork, and TTS model info.
 
-The audio itself still streams from `https://streaming.live365.com/<mount>` (see the table above). Live365's own metadata endpoint is not used — its `listeners` field is always zero.
+The audio itself still streams from `https://streaming.live365.com/<mount>` (see the table above). Live365's own metadata endpoint is not used because the Andon endpoints expose richer station state.
+
+## App Targets
+
+The shared SwiftUI source lives in `Sources/AndonCone`.
+
+- `AndonCone.xcodeproj` contains app targets and shared schemes for iOS/iPadOS and macOS.
+- The iOS target uses `Config/iOS/Info.plist` for background audio and CarPlay scene registration.
+- `Config/iOS/AndonCone.entitlements` is intentionally empty for ordinary iPhone/iPad development builds.
+- The macOS target uses `Config/macOS/Info.plist` and `Config/macOS/AndonCone.entitlements` with App Sandbox plus outgoing network access for Mac App Store submission.
+- Both targets use the bundle identifier `io.aparker.andoncone` for a single multi-platform App Store Connect app record.
+
+CarPlay requires Apple approval for the managed CarPlay Audio entitlement. Until that entitlement is added to the developer account and provisioning profile, leave `com.apple.developer.carplay-audio` out of the active entitlements file; otherwise Xcode cannot create a valid development profile for iPhone installs. The CarPlay scene configuration is present, but the app will not appear on a real CarPlay head unit until the entitlement is approved and re-added.
+
+The CarPlay implementation presents the station list with `CPListTemplate`; selecting a station starts playback and pushes the shared `CPNowPlayingTemplate`. The app publishes `MPNowPlayingInfoCenter` metadata, lock screen and Dynamic Island station artwork, and handles remote play/pause commands.
 
 ## Requirements
 
-- macOS 13 (Ventura) or later
-- Swift 6 toolchain (ships with Xcode 16+, or install via `xcode-select --install` if the Command Line Tools include Swift 6)
+- macOS 13 (Ventura) or later for the macOS app
+- iOS/iPadOS 16 or later for the mobile app
+- Swift 6 toolchain
+- Xcode for iOS/iPadOS/CarPlay builds
 
 ## Build
 
 ```sh
-./scripts/build-app.sh
+xcodebuild -project AndonCone.xcodeproj -scheme "Andon Cone macOS" -configuration Debug -destination "platform=macOS" build
+xcodebuild -project AndonCone.xcodeproj -scheme "Andon Cone iOS" -configuration Debug -destination "generic/platform=iOS Simulator" build
 ```
 
-The script runs `swift build -c release`, assembles a `.app` bundle with an `Info.plist` (bundle identifier `io.honeycomb.andoncone`, `LSUIElement` true so it doesn't show in the Dock), and ad-hoc codesigns it. Output is written to `dist/Andon Cone.app`. Drag it to `/Applications` or run it in place.
+For iPhone, iPad, and CarPlay, open `AndonCone.xcodeproj`, select the `Andon Cone iOS` scheme, set your development team, and run on an iOS simulator/device. For CarPlay simulator testing, use Xcode's CarPlay simulator after the target builds and after the entitlement is approved.
+
+`scripts/build-app.sh` remains as a local macOS package-bundle helper, but App Store/TestFlight work should use the Xcode project.
 
 ## Run During Development
 
@@ -41,4 +60,16 @@ The script runs `swift build -c release`, assembles a `.app` bundle with an `Inf
 swift run
 ```
 
-The app appears in the macOS menu bar with the `dot.radiowaves.left.and.right` SF Symbol. Clicking it opens a SwiftUI popover with a play/pause button, volume slider, station picker with artwork, current programming block, and tabs for upcoming blocks, top tracks, and recent station tweets. Keyboard shortcuts while the popover is open: <kbd>space</kbd> to play/pause, <kbd>⌘R</kbd> to refresh metadata, <kbd>⌘Q</kbd> to quit.
+The app opens as a normal SwiftUI window with station cards, a now-playing panel, playback controls, current programming block, upcoming schedule, top tracks, and recent station activity. Keyboard shortcut: <kbd>space</kbd> to play/pause.
+
+The macOS app uses a native `NavigationSplitView` sidebar and detail view. The iOS compact layout starts with a horizontal station rail followed by the listening surface.
+
+## App Store Assets
+
+Screenshot captures live under `AppStoreAssets/Screenshots`.
+
+- iPhone upload-ready screenshot: `AppStoreAssets/Screenshots/iPhone/AppStoreUpload/iphone-6-7-now-playing-1284x2778.png`
+- iPad screenshot: `AppStoreAssets/Screenshots/iPad/ipad-pro-13-now-playing.png`
+- Mac screenshot: `AppStoreAssets/Screenshots/Mac/`
+
+App Store Connect rejects newer simulator sizes for the 6.7-inch iPhone slot, so use the `1284x2778` upload-ready iPhone image.

@@ -1,6 +1,9 @@
 import AVFoundation
-import AppKit
 import Foundation
+#if os(iOS)
+import MediaPlayer
+import UIKit
+#endif
 
 struct Station: Identifiable, Hashable, Sendable {
     /// Andon Labs station UUID. Matches keys in /api/public/radio/metadata
@@ -113,6 +116,8 @@ struct AndonStationDetail: Decodable, Equatable, Sendable, Identifiable {
 
 @MainActor
 final class PlayerModel: ObservableObject {
+    static let shared = PlayerModel()
+
     static let stations: [Station] = [
         Station(
             id: "aab4d149-92fa-4386-9c1e-d938ecb66ee3",
@@ -150,10 +155,17 @@ final class PlayerModel: ObservableObject {
     @Published private(set) var detailsByID: [String: AndonStationDetail] = [:]
     @Published private(set) var lastMetadataRefresh: Date?
     @Published private(set) var metadataIsStale = false
+    @Published private(set) var isRefreshingMetadata = false
+    @Published private(set) var metadataErrorMessage: String?
 
     private var player: AVPlayer?
     private var playerItemStatusObservation: NSKeyValueObservation?
     private var metadataPollingTask: Task<Void, Never>?
+    private var manualMetadataRefreshTask: Task<Void, Never>?
+    #if os(iOS)
+    private var artworkByURL: [URL: MPMediaItemArtwork] = [:]
+    private var artworkLoadingURLs: Set<URL> = []
+    #endif
     private let session: URLSession
 
     init() {
@@ -163,14 +175,16 @@ final class PlayerModel: ObservableObject {
         config.timeoutIntervalForResource = 20
         config.waitsForConnectivity = false
         session = URLSession(configuration: config)
+        configureAudioSession()
+        configureRemoteCommands()
     }
 
     func start() {
         guard metadataPollingTask == nil else { return }
         metadataPollingTask = Task { [weak self] in
             while !Task.isCancelled {
-                self?.refreshAllMetadata()
-                try? await Task.sleep(for: .seconds(30))
+                await self?.performMetadataRefresh()
+                try? await Task.sleep(for: .seconds(20))
             }
         }
     }
@@ -178,6 +192,8 @@ final class PlayerModel: ObservableObject {
     func shutdown() {
         metadataPollingTask?.cancel()
         metadataPollingTask = nil
+        manualMetadataRefreshTask?.cancel()
+        manualMetadataRefreshTask = nil
         stopPlayback()
         session.invalidateAndCancel()
     }
@@ -190,6 +206,11 @@ final class PlayerModel: ObservableObject {
         }
     }
 
+    func play(_ station: Station) {
+        currentStation = station
+        startPlayback(for: station)
+    }
+
     func reconnect() {
         guard isPlaying else { return }
         startPlayback(for: currentStation)
@@ -198,6 +219,7 @@ final class PlayerModel: ObservableObject {
     func selectStation(_ station: Station) {
         guard station != currentStation else { return }
         currentStation = station
+        updateNowPlayingInfo()
         if isPlaying {
             startPlayback(for: station)
         }
@@ -209,13 +231,25 @@ final class PlayerModel: ObservableObject {
         player?.volume = clamped
     }
 
-    func refreshAllMetadata() {
-        refreshTracks()
-        refreshStats()
+    func station(id: String) -> Station? {
+        Self.stations.first { $0.id == id }
     }
 
-    func openRadioPage() {
-        NSWorkspace.shared.open(URL(string: "https://andonlabs.com/radio")!)
+    func refreshAllMetadata() {
+        manualMetadataRefreshTask?.cancel()
+        manualMetadataRefreshTask = Task { [weak self] in
+            await self?.performMetadataRefresh()
+        }
+    }
+
+    static let radioPageURL = URL(string: "https://andonlabs.com/radio")!
+
+    var currentTrack: AndonTrack? {
+        tracksByID[currentStation.id]
+    }
+
+    var currentDetail: AndonStationDetail? {
+        detailsByID[currentStation.id]
     }
 
     private func startPlayback(for station: Station) {
@@ -230,6 +264,7 @@ final class PlayerModel: ObservableObject {
         newPlayer.volume = volume
         player = newPlayer
         isPlaying = true
+        updateNowPlayingInfo()
         observe(item: playerItem)
         newPlayer.play()
     }
@@ -239,6 +274,7 @@ final class PlayerModel: ObservableObject {
         player?.pause()
         player = nil
         isPlaying = false
+        updateNowPlayingInfo()
     }
 
     private func observe(item: AVPlayerItem) {
@@ -255,44 +291,82 @@ final class PlayerModel: ObservableObject {
         playerItemStatusObservation = nil
     }
 
-    private func refreshTracks() {
-        let session = self.session
-        Task { [weak self] in
-            do {
-                let (data, _) = try await session.data(from: PlayerModel.metadataEndpoint)
-                try Task.checkCancellation()
-                let response = try Self.decoder.decode(MetadataResponse.self, from: data)
-                self?.applyTracks(response.stations)
-            } catch {
-                if Task.isCancelled { return }
-                if let urlError = error as? URLError, urlError.code == .cancelled { return }
-                NSLog("Andon Cone metadata refresh failed: %@", error.localizedDescription)
-                self?.markMetadataStale()
-            }
+    private func performMetadataRefresh() async {
+        guard !isRefreshingMetadata else { return }
+
+        isRefreshingMetadata = true
+        defer {
+            isRefreshingMetadata = false
+            updateMetadataStaleness()
+        }
+
+        var refreshErrors: [String] = []
+        var didRefresh = false
+
+        do {
+            let response = try await Self.fetchMetadata(using: session)
+            try Task.checkCancellation()
+            tracksByID = response.stations
+            didRefresh = true
+        } catch {
+            guard !Self.isCancellation(error) else { return }
+            refreshErrors.append("metadata: \(error.localizedDescription)")
+            NSLog("Andon Cone metadata refresh failed: %@", error.localizedDescription)
+        }
+
+        do {
+            let response = try await Self.fetchStats(using: session)
+            try Task.checkCancellation()
+            applyStats(response.stations)
+            didRefresh = true
+        } catch {
+            guard !Self.isCancellation(error) else { return }
+            refreshErrors.append("stats: \(error.localizedDescription)")
+            NSLog("Andon Cone stats refresh failed: %@", error.localizedDescription)
+        }
+
+        if didRefresh {
+            lastMetadataRefresh = Date()
+            metadataErrorMessage = refreshErrors.first
+            updateNowPlayingInfo()
+        } else {
+            metadataErrorMessage = refreshErrors.first ?? "Metadata refresh failed"
+            markMetadataStale()
         }
     }
 
-    private func refreshStats() {
-        let session = self.session
-        Task { [weak self] in
-            do {
-                let (data, _) = try await session.data(from: PlayerModel.statsEndpoint)
-                try Task.checkCancellation()
-                let response = try Self.decoder.decode(StatsResponse.self, from: data)
-                self?.applyStats(response.stations)
-            } catch {
-                if Task.isCancelled { return }
-                if let urlError = error as? URLError, urlError.code == .cancelled { return }
-                NSLog("Andon Cone stats refresh failed: %@", error.localizedDescription)
-                self?.markMetadataStale()
-            }
-        }
+    private static func fetchMetadata(using session: URLSession) async throws -> MetadataResponse {
+        let (data, response) = try await session.data(for: noCacheRequest(for: metadataEndpoint))
+        try validate(response)
+        return try decoder.decode(MetadataResponse.self, from: data)
     }
 
-    private func applyTracks(_ tracks: [String: AndonTrack]) {
-        tracksByID = tracks
-        lastMetadataRefresh = Date()
-        metadataIsStale = false
+    private static func fetchStats(using session: URLSession) async throws -> StatsResponse {
+        let (data, response) = try await session.data(for: noCacheRequest(for: statsEndpoint))
+        try validate(response)
+        return try decoder.decode(StatsResponse.self, from: data)
+    }
+
+    private static func noCacheRequest(for url: URL) -> URLRequest {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let cacheBust = URLQueryItem(name: "_", value: String(Int(Date().timeIntervalSince1970)))
+        var queryItems = components?.queryItems ?? []
+        queryItems.append(cacheBust)
+        components?.queryItems = queryItems
+
+        var request = URLRequest(url: components?.url ?? url)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.timeoutInterval = 10
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        return request
+    }
+
+    private static func validate(_ response: URLResponse) throws {
+        guard let httpResponse = response as? HTTPURLResponse else { return }
+        guard (200 ... 299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
     }
 
     private func applyStats(_ details: [AndonStationDetail]) {
@@ -301,12 +375,24 @@ final class PlayerModel: ObservableObject {
             dict[detail.id] = detail
         }
         detailsByID = dict
-        lastMetadataRefresh = Date()
-        metadataIsStale = false
     }
 
     private func markMetadataStale() {
         metadataIsStale = true
+    }
+
+    private func updateMetadataStaleness() {
+        guard let lastMetadataRefresh else {
+            metadataIsStale = true
+            return
+        }
+        metadataIsStale = Date().timeIntervalSince(lastMetadataRefresh) > 75
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return Task.isCancelled
     }
 
     private static let decoder: JSONDecoder = {
@@ -314,6 +400,106 @@ final class PlayerModel: ObservableObject {
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }()
+
+    private func configureAudioSession() {
+        #if os(iOS)
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            NSLog("Andon Cone audio session setup failed: %@", error.localizedDescription)
+        }
+        #endif
+    }
+
+    private func configureRemoteCommands() {
+        #if os(iOS)
+        let commandCenter = MPRemoteCommandCenter.shared()
+
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.startPlayback(for: self.currentStation)
+            }
+            return .success
+        }
+
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in
+                self?.stopPlayback()
+            }
+            return .success
+        }
+
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in
+                self?.togglePlayback()
+            }
+            return .success
+        }
+        #endif
+    }
+
+    private func updateNowPlayingInfo() {
+        #if os(iOS)
+        let artworkURL = currentDetail?.imageURL
+        var info: [String: Any] = [
+            MPMediaItemPropertyAlbumTitle: currentStation.name,
+            MPMediaItemPropertyTitle: currentTrack?.displayTitle ?? currentStation.name,
+            MPMediaItemPropertyArtist: currentTrack?.displayArtist ?? currentStation.host,
+            MPNowPlayingInfoPropertyIsLiveStream: true,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
+        ]
+
+        if let listeners = currentDetail?.stats?.currentListeners {
+            info[MPMediaItemPropertyComments] = "\(listeners) current listeners"
+        }
+
+        if let artworkURL {
+            if let artwork = artworkByURL[artworkURL] {
+                info[MPMediaItemPropertyArtwork] = artwork
+            } else {
+                loadNowPlayingArtwork(from: artworkURL, for: currentStation.id)
+            }
+        }
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        #endif
+    }
+
+    #if os(iOS)
+    private func loadNowPlayingArtwork(from url: URL, for stationID: String) {
+        guard !artworkLoadingURLs.contains(url) else { return }
+
+        artworkLoadingURLs.insert(url)
+        Task { [weak self] in
+            guard let self else { return }
+            defer { Task { @MainActor in self.artworkLoadingURLs.remove(url) } }
+
+            do {
+                var request = URLRequest(url: url)
+                request.cachePolicy = .returnCacheDataElseLoad
+                request.timeoutInterval = 10
+                let (data, response) = try await self.session.data(for: request)
+                try Self.validate(response)
+                try Task.checkCancellation()
+
+                guard let image = UIImage(data: data) else { return }
+                let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+
+                await MainActor.run {
+                    self.artworkByURL[url] = artwork
+                    if self.currentStation.id == stationID {
+                        self.updateNowPlayingInfo()
+                    }
+                }
+            } catch {
+                guard !Self.isCancellation(error) else { return }
+                NSLog("Andon Cone artwork load failed: %@", error.localizedDescription)
+            }
+        }
+    }
+    #endif
 }
 
 private struct MetadataResponse: Decodable {

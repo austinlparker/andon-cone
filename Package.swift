@@ -5,6 +5,7 @@ import PackageDescription
 let package = Package(
     name: "AndonCone",
     platforms: [
+        .iOS(.v16),
         .macOS(.v13)
     ],
     products: [
@@ -14,7 +15,6 @@ let package = Package(
         .executableTarget(
             name: "AndonCone",
             linkerSettings: [
-                .linkedFramework("AppKit"),
                 .linkedFramework("AVFoundation")
             ]
         )

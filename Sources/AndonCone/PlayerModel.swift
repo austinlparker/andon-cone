@@ -5,6 +5,101 @@ import MediaPlayer
 import UIKit
 #endif
 
+private func isCancellation(_ error: Error) -> Bool {
+    if error is CancellationError { return true }
+    if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+    return Task.isCancelled
+}
+
+private struct RadioAPIClient {
+    private static let metadataEndpoint = URL(string: "https://os.andonlabs.com/api/public/radio/metadata")!
+    private static let statsEndpoint = URL(string: "https://os.andonlabs.com/api/public/radio/stats")!
+
+    private let session: URLSession
+
+    init() {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 20
+        config.waitsForConnectivity = false
+        session = URLSession(configuration: config)
+    }
+
+    func fetchMetadata() async throws -> MetadataResponse {
+        let data = try await data(for: Self.noCacheRequest(for: Self.metadataEndpoint))
+        return try Self.decoder.decode(MetadataResponse.self, from: data)
+    }
+
+    func fetchStats() async throws -> StatsResponse {
+        let data = try await data(for: Self.noCacheRequest(for: Self.statsEndpoint))
+        return try Self.decoder.decode(StatsResponse.self, from: data)
+    }
+
+    #if os(iOS)
+    func fetchArtwork(from url: URL) async throws -> NowPlayingArtwork {
+        var request = URLRequest(url: url)
+        request.cachePolicy = .returnCacheDataElseLoad
+        request.timeoutInterval = 10
+
+        let data = try await data(for: request)
+        guard let image = UIImage(data: data) else {
+            throw URLError(.cannotDecodeContentData)
+        }
+        return NowPlayingArtwork(image: image)
+    }
+    #endif
+
+    func invalidateAndCancel() {
+        session.invalidateAndCancel()
+    }
+
+    private func data(for request: URLRequest) async throws -> Data {
+        let (data, response) = try await session.data(for: request)
+        try Self.validate(response)
+        try Task.checkCancellation()
+        return data
+    }
+
+    private static func noCacheRequest(for url: URL) -> URLRequest {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let cacheBust = URLQueryItem(name: "_", value: String(Int(Date().timeIntervalSince1970)))
+        var queryItems = components?.queryItems ?? []
+        queryItems.append(cacheBust)
+        components?.queryItems = queryItems
+
+        var request = URLRequest(url: components?.url ?? url)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.timeoutInterval = 10
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        return request
+    }
+
+    private static func validate(_ response: URLResponse) throws {
+        guard let httpResponse = response as? HTTPURLResponse else { return }
+        guard (200 ... 299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
+    private static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+}
+
+#if os(iOS)
+private struct NowPlayingArtwork: @unchecked Sendable {
+    let mediaItemArtwork: MPMediaItemArtwork
+
+    init(image: UIImage) {
+        let artworkImage = image
+        mediaItemArtwork = MPMediaItemArtwork(boundsSize: artworkImage.size) { _ in artworkImage }
+    }
+}
+#endif
+
 struct Station: Identifiable, Hashable, Sendable {
     /// Andon Labs station UUID. Matches keys in /api/public/radio/metadata
     /// and the `id` field in /api/public/radio/stats.
@@ -145,12 +240,10 @@ final class PlayerModel: ObservableObject {
         ),
     ]
 
-    private static let metadataEndpoint = URL(string: "https://os.andonlabs.com/api/public/radio/metadata")!
-    private static let statsEndpoint = URL(string: "https://os.andonlabs.com/api/public/radio/stats")!
-
     @Published var currentStation: Station
     @Published private(set) var isPlaying = false
     @Published var volume: Float = 1.0
+    @Published private(set) var isMuted = false
     @Published private(set) var tracksByID: [String: AndonTrack] = [:]
     @Published private(set) var detailsByID: [String: AndonStationDetail] = [:]
     @Published private(set) var lastMetadataRefresh: Date?
@@ -162,19 +255,16 @@ final class PlayerModel: ObservableObject {
     private var playerItemStatusObservation: NSKeyValueObservation?
     private var metadataPollingTask: Task<Void, Never>?
     private var manualMetadataRefreshTask: Task<Void, Never>?
+    private var volumeBeforeMute: Float = 1.0
     #if os(iOS)
-    private var artworkByURL: [URL: MPMediaItemArtwork] = [:]
+    private var artworkByURL: [URL: NowPlayingArtwork] = [:]
     private var artworkLoadingURLs: Set<URL> = []
     #endif
-    private let session: URLSession
+    private let apiClient: RadioAPIClient
 
     init() {
         currentStation = PlayerModel.stations[0]
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 20
-        config.waitsForConnectivity = false
-        session = URLSession(configuration: config)
+        apiClient = RadioAPIClient()
         configureAudioSession()
         configureRemoteCommands()
     }
@@ -195,7 +285,7 @@ final class PlayerModel: ObservableObject {
         manualMetadataRefreshTask?.cancel()
         manualMetadataRefreshTask = nil
         stopPlayback()
-        session.invalidateAndCancel()
+        apiClient.invalidateAndCancel()
     }
 
     func togglePlayback() {
@@ -229,6 +319,28 @@ final class PlayerModel: ObservableObject {
         let clamped = max(0, min(1, value))
         volume = clamped
         player?.volume = clamped
+        if clamped > 0 {
+            volumeBeforeMute = clamped
+            isMuted = false
+            player?.isMuted = false
+        } else {
+            isMuted = true
+            player?.isMuted = true
+        }
+    }
+
+    func toggleMute() {
+        if isMuted {
+            let restoredVolume = max(volumeBeforeMute, 0.25)
+            isMuted = false
+            volume = restoredVolume
+            player?.volume = restoredVolume
+            player?.isMuted = false
+        } else {
+            volumeBeforeMute = max(volume, 0.25)
+            isMuted = true
+            player?.isMuted = true
+        }
     }
 
     func station(id: String) -> Station? {
@@ -252,6 +364,10 @@ final class PlayerModel: ObservableObject {
         detailsByID[currentStation.id]
     }
 
+    var routePickerPlayer: AVPlayer? {
+        player
+    }
+
     private func startPlayback(for station: Station) {
         // Tear the outgoing player down explicitly. ARC alone can leave a brief
         // window where the previous stream keeps feeding audio if anything
@@ -261,7 +377,9 @@ final class PlayerModel: ObservableObject {
 
         let playerItem = AVPlayerItem(url: station.streamURL)
         let newPlayer = AVPlayer(playerItem: playerItem)
+        newPlayer.allowsExternalPlayback = true
         newPlayer.volume = volume
+        newPlayer.isMuted = isMuted
         player = newPlayer
         isPlaying = true
         updateNowPlayingInfo()
@@ -304,23 +422,21 @@ final class PlayerModel: ObservableObject {
         var didRefresh = false
 
         do {
-            let response = try await Self.fetchMetadata(using: session)
-            try Task.checkCancellation()
+            let response = try await apiClient.fetchMetadata()
             tracksByID = response.stations
             didRefresh = true
         } catch {
-            guard !Self.isCancellation(error) else { return }
+            guard !isCancellation(error) else { return }
             refreshErrors.append("metadata: \(error.localizedDescription)")
             NSLog("Andon Cone metadata refresh failed: %@", error.localizedDescription)
         }
 
         do {
-            let response = try await Self.fetchStats(using: session)
-            try Task.checkCancellation()
+            let response = try await apiClient.fetchStats()
             applyStats(response.stations)
             didRefresh = true
         } catch {
-            guard !Self.isCancellation(error) else { return }
+            guard !isCancellation(error) else { return }
             refreshErrors.append("stats: \(error.localizedDescription)")
             NSLog("Andon Cone stats refresh failed: %@", error.localizedDescription)
         }
@@ -332,40 +448,6 @@ final class PlayerModel: ObservableObject {
         } else {
             metadataErrorMessage = refreshErrors.first ?? "Metadata refresh failed"
             markMetadataStale()
-        }
-    }
-
-    private static func fetchMetadata(using session: URLSession) async throws -> MetadataResponse {
-        let (data, response) = try await session.data(for: noCacheRequest(for: metadataEndpoint))
-        try validate(response)
-        return try decoder.decode(MetadataResponse.self, from: data)
-    }
-
-    private static func fetchStats(using session: URLSession) async throws -> StatsResponse {
-        let (data, response) = try await session.data(for: noCacheRequest(for: statsEndpoint))
-        try validate(response)
-        return try decoder.decode(StatsResponse.self, from: data)
-    }
-
-    private static func noCacheRequest(for url: URL) -> URLRequest {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        let cacheBust = URLQueryItem(name: "_", value: String(Int(Date().timeIntervalSince1970)))
-        var queryItems = components?.queryItems ?? []
-        queryItems.append(cacheBust)
-        components?.queryItems = queryItems
-
-        var request = URLRequest(url: components?.url ?? url)
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        request.timeoutInterval = 10
-        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
-        return request
-    }
-
-    private static func validate(_ response: URLResponse) throws {
-        guard let httpResponse = response as? HTTPURLResponse else { return }
-        guard (200 ... 299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
         }
     }
 
@@ -389,23 +471,12 @@ final class PlayerModel: ObservableObject {
         metadataIsStale = Date().timeIntervalSince(lastMetadataRefresh) > 75
     }
 
-    private static func isCancellation(_ error: Error) -> Bool {
-        if error is CancellationError { return true }
-        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
-        return Task.isCancelled
-    }
-
-    private static let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }()
-
     private func configureAudioSession() {
         #if os(iOS)
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, policy: .longFormAudio, options: [])
+            try session.setActive(true)
         } catch {
             NSLog("Andon Cone audio session setup failed: %@", error.localizedDescription)
         }
@@ -457,7 +528,7 @@ final class PlayerModel: ObservableObject {
 
         if let artworkURL {
             if let artwork = artworkByURL[artworkURL] {
-                info[MPMediaItemPropertyArtwork] = artwork
+                info[MPMediaItemPropertyArtwork] = artwork.mediaItemArtwork
             } else {
                 loadNowPlayingArtwork(from: artworkURL, for: currentStation.id)
             }
@@ -472,29 +543,26 @@ final class PlayerModel: ObservableObject {
         guard !artworkLoadingURLs.contains(url) else { return }
 
         artworkLoadingURLs.insert(url)
+        let apiClient = apiClient
         Task { [weak self] in
-            guard let self else { return }
-            defer { Task { @MainActor in self.artworkLoadingURLs.remove(url) } }
-
             do {
-                var request = URLRequest(url: url)
-                request.cachePolicy = .returnCacheDataElseLoad
-                request.timeoutInterval = 10
-                let (data, response) = try await self.session.data(for: request)
-                try Self.validate(response)
-                try Task.checkCancellation()
-
-                guard let image = UIImage(data: data) else { return }
-                let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                let artwork = try await apiClient.fetchArtwork(from: url)
 
                 await MainActor.run {
-                    self.artworkByURL[url] = artwork
-                    if self.currentStation.id == stationID {
-                        self.updateNowPlayingInfo()
+                    if let self {
+                        _ = self.artworkLoadingURLs.remove(url)
+                        self.artworkByURL[url] = artwork
+                        if self.currentStation.id == stationID {
+                            self.updateNowPlayingInfo()
+                        }
                     }
                 }
             } catch {
-                guard !Self.isCancellation(error) else { return }
+                await MainActor.run {
+                    _ = self?.artworkLoadingURLs.remove(url)
+                }
+
+                guard !isCancellation(error) else { return }
                 NSLog("Andon Cone artwork load failed: %@", error.localizedDescription)
             }
         }

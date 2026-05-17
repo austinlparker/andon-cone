@@ -11,14 +11,14 @@
 		100000000000000000000102 /* PlayerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000002 /* PlayerModel.swift */; };
 		100000000000000000000103 /* RadioAppView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000003 /* RadioAppView.swift */; };
 		100000000000000000000104 /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000004 /* CarPlaySceneDelegate.swift */; };
-		100000000000000000000111 /* TipStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* TipStore.swift */; };
 		100000000000000000000105 /* AndonConeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000001 /* AndonConeApp.swift */; };
 		100000000000000000000106 /* PlayerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000002 /* PlayerModel.swift */; };
 		100000000000000000000107 /* RadioAppView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000003 /* RadioAppView.swift */; };
 		100000000000000000000108 /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000004 /* CarPlaySceneDelegate.swift */; };
-		100000000000000000000112 /* TipStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* TipStore.swift */; };
 		100000000000000000000109 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000014 /* Assets.xcassets */; };
 		100000000000000000000110 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000014 /* Assets.xcassets */; };
+		100000000000000000000111 /* TipStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* TipStore.swift */; };
+		100000000000000000000112 /* TipStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* TipStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */

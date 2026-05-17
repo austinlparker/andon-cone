@@ -15,7 +15,8 @@ let package = Package(
         .executableTarget(
             name: "AndonCone",
             linkerSettings: [
-                .linkedFramework("AVFoundation")
+                .linkedFramework("AVFoundation"),
+                .linkedFramework("AVKit")
             ]
         )
     ]

@@ -1,5 +1,6 @@
 import SwiftUI
 import StoreKit
+import AVKit
 
 private enum DetailTab: String, CaseIterable, Identifiable {
     case schedule = "Schedule"
@@ -11,123 +12,52 @@ private enum DetailTab: String, CaseIterable, Identifiable {
 
 struct RadioAppView: View {
     @EnvironmentObject private var model: PlayerModel
+    @EnvironmentObject private var appChrome: AppChromeModel
     @StateObject private var tipStore = TipStore()
     @State private var selectedTab: DetailTab = .schedule
-    @State private var isShowingTipJar = false
-    @Environment(\.openURL) private var openURL
+    @State private var selectedStationID: Station.ID? = PlayerModel.stations[0].id
+    @State private var columnVisibility = NavigationSplitViewVisibility.automatic
 
     var body: some View {
-        Group {
-            #if os(macOS)
-            macOSRoot
-            #else
-            GeometryReader { geometry in
-                Group {
-                    if geometry.size.width >= 760 {
-                        wideLayout
-                    } else {
-                        compactLayout
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(AppBackground(url: model.currentDetail?.imageURL))
-            }
-            .navigationTitle("Andon FM")
-            #endif
-        }
-        .sheet(isPresented: $isShowingTipJar) {
-            TipJarView(store: tipStore)
-        }
-        .task {
-            await tipStore.loadProducts()
-        }
-    }
-
-    #if os(macOS)
-    private var macOSRoot: some View {
-        macOSLayout
-            .frame(minWidth: 720, idealWidth: 980, minHeight: 520, idealHeight: 680)
-    }
-
-    private var macOSLayout: some View {
-        NavigationSplitView {
-            MacStationSourceList()
-                .navigationSplitViewColumnWidth(min: 230, ideal: 260, max: 320)
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            StationSourceList(
+                selectedStationID: $selectedStationID,
+                onSelectStation: collapseSidebarAfterSelection
+            )
+                .navigationSplitViewColumnWidth(min: 230, ideal: 276, max: 330)
         } detail: {
-            MacStationDetail(
-                showTipJar: { isShowingTipJar = true },
+            StationDetailView(
                 tabPicker: { tabPicker },
                 tabContent: { tabContent }
             )
             .navigationTitle(model.currentStation.name)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
         }
         .navigationSplitViewStyle(.balanced)
-    }
-    #endif
-
-    private var wideLayout: some View {
-        HStack(spacing: 0) {
-            StationSidebar()
-                .frame(width: 316)
-                .padding(18)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    header
-                    NowPlayingPanel()
-                    tabPicker
-                    tabContent
-                }
-                .padding(24)
-                .frame(maxWidth: 760, alignment: .leading)
-            }
+        #if os(macOS)
+        .frame(minWidth: 720, idealWidth: 980, minHeight: 520, idealHeight: 680)
+        #endif
+        .sheet(isPresented: $appChrome.isShowingAbout) {
+            AboutView(store: tipStore)
         }
-    }
-
-    private var compactLayout: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .top, spacing: 10) {
-                    StationRail()
-                    SupportButton {
-                        isShowingTipJar = true
-                    }
-                    .padding(.top, 4)
-                }
-                NowPlayingPanel()
-                tabPicker
-                tabContent
-            }
-            .padding(18)
+        .task {
+            await tipStore.loadProducts()
         }
-    }
-
-    private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Andon FM")
-                    .font(.largeTitle.weight(.black))
-            }
-
-            Spacer()
-
-            SupportButton {
-                isShowingTipJar = true
-            }
-
-            Button {
-                openURL(PlayerModel.radioPageURL)
-            } label: {
-                Image(systemName: "safari")
-                    .glassIcon()
-            }
-            .buttonStyle(.plain)
-            .help("Open Andon FM")
+        .onChange(of: model.currentStation.id) { stationID in
+            selectedStationID = stationID
         }
     }
 
     private var tabPicker: some View {
         GlassSegmentedPicker(selection: $selectedTab)
+    }
+
+    private func collapseSidebarAfterSelection() {
+        #if os(iOS)
+        columnVisibility = .detailOnly
+        #endif
     }
 
     @ViewBuilder
@@ -143,17 +73,24 @@ struct RadioAppView: View {
     }
 }
 
-#if os(macOS)
-private struct MacStationDetail<TabPicker: View, TabContent: View>: View {
+private struct StationDetailView<TabPicker: View, TabContent: View>: View {
     @EnvironmentObject private var model: PlayerModel
-    let showTipJar: () -> Void
     let tabPicker: () -> TabPicker
     let tabContent: () -> TabContent
 
     var body: some View {
+        let backdrop = StationTintBackdrop(
+            accent: model.currentStation.accentColor,
+            imageURL: model.currentDetail?.imageURL
+        )
+
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                #if os(macOS)
                 MacNowPlayingHero()
+                #else
+                NowPlayingPanel()
+                #endif
                 Divider()
                 tabPicker()
                 tabContent()
@@ -162,24 +99,29 @@ private struct MacStationDetail<TabPicker: View, TabContent: View>: View {
             .padding(.vertical, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(.background)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                SupportButton(action: showTipJar)
-            }
-        }
+        .background(backdrop.ignoresSafeArea())
+        #if os(iOS)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        #endif
     }
 }
 
-private struct MacStationSourceList: View {
+private struct StationSourceList: View {
     @EnvironmentObject private var model: PlayerModel
+    @EnvironmentObject private var appChrome: AppChromeModel
+    @Environment(\.openURL) private var openURL
+    @Binding var selectedStationID: Station.ID?
+    let onSelectStation: () -> Void
 
-    private var selection: Binding<Station?> {
+    private var selection: Binding<Station.ID?> {
         Binding(
-            get: { model.currentStation },
-            set: { station in
-                if let station {
+            get: { selectedStationID },
+            set: { stationID in
+                selectedStationID = stationID
+
+                if let stationID, let station = model.station(id: stationID) {
                     model.selectStation(station)
+                    onSelectStation()
                 }
             }
         )
@@ -189,12 +131,27 @@ private struct MacStationSourceList: View {
         List(selection: selection) {
             Section("Library") {
                 ForEach(PlayerModel.stations) { station in
-                    MacStationRow(
-                        station: station,
-                        detail: model.detailsByID[station.id],
-                        track: model.tracksByID[station.id]
-                    )
-                    .tag(station)
+                    NavigationLink(value: station.id) {
+                        StationSourceRow(
+                            station: station,
+                            detail: model.detailsByID[station.id],
+                            track: model.tracksByID[station.id]
+                        )
+                    }
+                }
+            }
+
+            Section("App") {
+                Button {
+                    appChrome.isShowingAbout = true
+                } label: {
+                    Label("About Andon Cone", systemImage: "info.circle")
+                }
+
+                Button {
+                    openURL(PlayerModel.radioPageURL)
+                } label: {
+                    Label("Open Andon FM", systemImage: "safari")
                 }
             }
 
@@ -225,7 +182,7 @@ private struct MacStationSourceList: View {
     }
 }
 
-private struct MacStationRow: View {
+private struct StationSourceRow: View {
     let station: Station
     let detail: AndonStationDetail?
     let track: AndonTrack?
@@ -248,31 +205,31 @@ private struct MacStationRow: View {
     }
 }
 
+#if os(macOS)
+
 private struct MacNowPlayingHero: View {
     @EnvironmentObject private var model: PlayerModel
+    @Environment(\.colorScheme) private var colorScheme
 
     private var detail: AndonStationDetail? { model.currentDetail }
     private var track: AndonTrack? { model.currentTrack }
 
     var body: some View {
+        let accent = model.currentStation.accentColor
+        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+
         HStack(alignment: .center, spacing: 24) {
             StationArtwork(url: detail?.imageURL, size: 190)
-                .shadow(color: Color.primary.opacity(0.14), radius: 16, y: 8)
+                .shadow(color: accent.opacity(colorScheme == .dark ? 0.28 : 0.18), radius: 18, y: 10)
 
             VStack(alignment: .leading, spacing: 10) {
-                Text(model.currentStation.name)
-                    .font(.title.weight(.bold))
-                    .lineLimit(1)
-
-                Text(model.currentStation.host)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                stationContext
 
                 Divider()
                     .padding(.vertical, 4)
 
                 Text(track?.displayTitle ?? "Loading now playing")
-                    .font(.title2.weight(.semibold))
+                    .font(.title.weight(.bold))
                     .lineLimit(2)
 
                 Text(track?.displayArtist ?? "Waiting for metadata")
@@ -287,8 +244,23 @@ private struct MacNowPlayingHero: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.top, 8)
-        .padding(.bottom, 4)
+        .padding(22)
+        .background(accent.opacity(colorScheme == .dark ? 0.12 : 0.07), in: shape)
+        .background(.regularMaterial, in: shape)
+        .overlay(shape.stroke(accent.opacity(colorScheme == .dark ? 0.26 : 0.18), lineWidth: 1))
+    }
+
+    private var stationContext: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(model.currentStation.accentColor)
+
+            Text(model.currentStation.host)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
     }
 
     private var metadataLine: some View {
@@ -352,156 +324,31 @@ private struct MacInlineTransportControls: View {
 
 #endif
 
-private struct StationSidebar: View {
-    @EnvironmentObject private var model: PlayerModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Stations")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            VStack(spacing: 8) {
-                ForEach(PlayerModel.stations) { station in
-                    StationCard(
-                        station: station,
-                        detail: model.detailsByID[station.id],
-                        track: model.tracksByID[station.id],
-                        isSelected: station == model.currentStation,
-                        layout: .sidebar
-                    )
-                }
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(14)
-        .appGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous), interactive: true)
-    }
-}
-
-private struct StationRail: View {
-    @EnvironmentObject private var model: PlayerModel
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(PlayerModel.stations) { station in
-                    StationCard(
-                        station: station,
-                        detail: model.detailsByID[station.id],
-                        track: model.tracksByID[station.id],
-                        isSelected: station == model.currentStation,
-                        layout: .rail
-                    )
-                    .frame(width: 230)
-                }
-            }
-            .padding(.vertical, 2)
-        }
-    }
-}
-
-private enum StationCardLayout {
-    case sidebar
-    case rail
-}
-
-private struct StationCard: View {
-    @EnvironmentObject private var model: PlayerModel
-    let station: Station
-    let detail: AndonStationDetail?
-    let track: AndonTrack?
-    let isSelected: Bool
-    let layout: StationCardLayout
-
-    var body: some View {
-        Button {
-            model.selectStation(station)
-        } label: {
-            cardContent
-        }
-        .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private var cardContent: some View {
-        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-
-        HStack(spacing: 10) {
-            StationArtwork(url: detail?.imageURL, size: layout == .sidebar ? 44 : 40)
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(station.name)
-                        .font(.callout.weight(.semibold))
-                        .lineLimit(1)
-
-                    if isSelected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.tint)
-                    }
-                }
-
-                Text(track?.displayTitle ?? station.host)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                if let listeners = detail?.stats?.currentListeners {
-                    Label("\(listeners)", systemImage: "person.2.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .labelStyle(.titleAndIcon)
-                        .monospacedDigit()
-                }
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.primary.opacity(layout == .rail ? 0.025 : 0.04), in: shape)
-        .overlay(
-            shape.stroke(isSelected ? Color.accentColor.opacity(0.48) : Color.primary.opacity(0.08), lineWidth: 1)
-        )
-        .if(layout == .rail) { view in
-            view.appGlass(in: shape, interactive: true)
-        }
-    }
-}
-
 private struct NowPlayingPanel: View {
     @EnvironmentObject private var model: PlayerModel
+    @Environment(\.colorScheme) private var colorScheme
 
     private var detail: AndonStationDetail? { model.currentDetail }
     private var track: AndonTrack? { model.currentTrack }
 
     var body: some View {
+        let accent = model.currentStation.accentColor
+        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 18) {
                 StationArtwork(url: detail?.imageURL, size: 132)
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(model.currentStation.name)
-                        .font(.title2.weight(.bold))
-                        .lineLimit(2)
-
-                    Text(model.currentStation.host)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    Divider()
-                        .padding(.vertical, 4)
+                VStack(alignment: .leading, spacing: 10) {
+                    stationContext
 
                     Text(trackStatusTitle)
-                        .font(.title3.weight(.semibold))
-                        .lineLimit(2)
+                        .font(.title2.weight(.bold))
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Text(trackStatusSubtitle)
-                        .font(.body)
+                        .font(.title3)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
 
@@ -513,12 +360,23 @@ private struct NowPlayingPanel: View {
             TransportControls()
         }
         .padding(18)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(Color.primary.opacity(0.09), lineWidth: 1)
-        )
-        .shadow(color: Color.primary.opacity(0.08), radius: 22, y: 12)
+        .background(accent.opacity(colorScheme == .dark ? 0.14 : 0.08), in: shape)
+        .background(.regularMaterial, in: shape)
+        .overlay(shape.stroke(accent.opacity(colorScheme == .dark ? 0.28 : 0.18), lineWidth: 1))
+        .shadow(color: accent.opacity(colorScheme == .dark ? 0.18 : 0.11), radius: 24, y: 14)
+    }
+
+    private var stationContext: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "waveform.circle.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(model.currentStation.accentColor)
+
+            Text(model.currentStation.host)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
     }
 
     private var trackStatusTitle: String {
@@ -558,61 +416,144 @@ private struct TransportControls: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            HStack(spacing: 22) {
-                Spacer()
-
-                Button {
-                    model.reconnect()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .glassIcon()
-                }
-                .disabled(!model.isPlaying)
-                .help("Reconnect stream")
-
+            HStack {
+                Spacer(minLength: 0)
                 Button {
                     model.togglePlayback()
                 } label: {
-                    Image(systemName: model.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 34, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
-                        .frame(width: 70, height: 70)
-                        .appGlass(
-                            in: Circle(),
-                            tint: model.isPlaying ? Color.accentColor.opacity(0.22) : nil,
-                            interactive: true
-                        )
+                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 32, weight: .semibold))
+                        .symbolRenderingMode(.monochrome)
+                        .frame(width: 64, height: 64)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.space, modifiers: [])
+                .foregroundStyle(.primary)
+                .background(
+                    Circle()
+                        .fill(Color.primary.opacity(0.08))
+                )
                 .help(model.isPlaying ? "Pause" : "Play")
-
-                Spacer()
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.borderless)
-            .padding(8)
-            .appGlass(in: Capsule(), interactive: true)
 
-            #if os(macOS)
-            HStack(spacing: 10) {
-                Image(systemName: "speaker.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            HStack(spacing: 14) {
+                Button {
+                    model.toggleMute()
+                } label: {
+                    Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 34, height: 34)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(model.isMuted ? "Unmute" : "Mute")
+
                 Slider(value: Binding(
                     get: { Double(model.volume) },
                     set: { model.setVolume(Float($0)) }
                 ), in: 0 ... 1)
-                Image(systemName: "speaker.wave.3.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .tint(model.currentStation.accentColor)
+
+                AirPlayRoutePicker(player: model.routePickerPlayer)
+                    .frame(width: 34, height: 34)
+                    .help("Choose AirPlay output")
+                    .accessibilityLabel("Choose AirPlay output")
+
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
             .appGlass(in: Capsule(), interactive: true)
-            #endif
         }
     }
 }
+
+private struct AirPlayRoutePicker: View {
+    let player: AVPlayer?
+
+    var body: some View {
+        PlatformRoutePicker(player: player)
+            .frame(width: 34, height: 34)
+    }
+}
+
+private struct StationTintBackdrop: View {
+    let accent: Color
+    let imageURL: URL?
+
+    var body: some View {
+        ZStack {
+            AppSurface.primary
+
+            GeometryReader { geometry in
+                ZStack {
+                    accent
+                        .opacity(0.08)
+
+                    AsyncImage(url: imageURL) { phase in
+                        switch phase {
+                        case let .success(image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .blur(radius: 52)
+                                .saturation(1.2)
+                                .opacity(0.18)
+                        default:
+                            accent.opacity(0.05)
+                        }
+                    }
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+
+                    AppSurface.primary.opacity(0.72)
+                }
+            }
+        }
+    }
+}
+
+#if os(iOS)
+private struct PlatformRoutePicker: UIViewRepresentable {
+    let player: AVPlayer?
+
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.backgroundColor = .clear
+        view.tintColor = .secondaryLabel
+        view.activeTintColor = .tintColor
+        view.prioritizesVideoDevices = false
+        return view
+    }
+
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {
+        uiView.tintColor = .secondaryLabel
+        uiView.activeTintColor = .tintColor
+    }
+}
+#elseif os(macOS)
+private struct PlatformRoutePicker: NSViewRepresentable {
+    let player: AVPlayer?
+
+    func makeNSView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.isRoutePickerButtonBordered = false
+        view.setRoutePickerButtonColor(.secondaryLabelColor, for: .normal)
+        view.setRoutePickerButtonColor(.controlAccentColor, for: .active)
+        view.player = player
+        return view
+    }
+
+    func updateNSView(_ nsView: AVRoutePickerView, context: Context) {
+        nsView.player = player
+        nsView.setRoutePickerButtonColor(.secondaryLabelColor, for: .normal)
+        nsView.setRoutePickerButtonColor(.controlAccentColor, for: .active)
+    }
+}
+#endif
 
 private struct SchedulePanel: View {
     @EnvironmentObject private var model: PlayerModel
@@ -797,127 +738,141 @@ private struct StationArtwork: View {
     }
 }
 
-private struct SupportButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "heart.fill")
-                .glassIcon()
-        }
-        .buttonStyle(.plain)
-        .help("Support Andon Cone")
-        .accessibilityLabel("Support Andon Cone")
-    }
-}
-
-private struct TipJarView: View {
+private struct AboutView: View {
     @ObservedObject var store: TipStore
     @Environment(\.dismiss) private var dismiss
 
+    private let blogURL = URL(string: "https://andonlabs.com/blog/andon-fm")!
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Support Andon Cone")
-                        .font(.title2.weight(.bold))
-                    Text("Optional tips support development and do not unlock content or features.")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                header
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("About")
+                        .font(.headline)
+
+                    Text("Andon Cone is a native player for the andon.fm live streams, an experiment run by Andon Labs to have LLMs manage a radio station.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Link(destination: blogURL) {
+                        Label("Read about Andon FM", systemImage: "safari")
+                    }
+                    .font(.callout)
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("About Me")
+                        .font(.headline)
+
+                    (
+                        Text("I'm ")
+                        + Text("[@aparker.io](https://bsky.app/profile/aparker.io)")
+                        + Text(", a developer and tinkerer. This application is free, but if you enjoyed it, feel free to leave a tip.")
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .tint(.accentColor)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    TipMenu(store: store)
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("What does the name mean?")
+                        .font(.headline)
+
+                    Text("It is a little bit of wordplay: Andon Labs, light cones, and the fact that a speaker is, physically enough, a cone.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Spacer()
-
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .frame(width: 32, height: 32)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .help("Close")
-            }
-
-            if store.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 24)
-            } else if store.products.isEmpty {
-                EmptyState(text: "Tips are not available yet")
-            } else {
-                VStack(spacing: 10) {
-                    ForEach(store.products) { product in
-                        TipProductRow(product: product, store: store)
-                    }
+                if let message = store.message {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-
-            if let message = store.message {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            .padding(22)
         }
-        .padding(22)
-        .frame(minWidth: 320, idealWidth: 380, maxWidth: 460)
+        .frame(minWidth: 320, idealWidth: 420, maxWidth: 500)
         #if os(iOS)
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         #endif
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(.tint)
+                .frame(width: 46, height: 46)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Andon Cone")
+                    .font(.title2.weight(.bold))
+                Text("Native radio for Andon FM")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .frame(width: 32, height: 32)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Close")
+        }
     }
 }
 
-private struct TipProductRow: View {
-    let product: Product
+private struct TipMenu: View {
     @ObservedObject var store: TipStore
 
-    private var isPurchasing: Bool {
-        store.purchaseInProgressProductID == product.id
-    }
-
     var body: some View {
-        Button {
-            Task {
-                await store.purchase(product)
-            }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "heart.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.tint)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(product.displayName)
-                        .font(.headline)
-                    Text(product.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-
-                Spacer()
-
-                if isPurchasing {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Text(product.displayPrice)
+        Group {
+            if store.isLoading {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if store.products.isEmpty {
+                Text("Tips are not available yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Menu {
+                    ForEach(store.products) { product in
+                        Button {
+                            Task {
+                                await store.purchase(product)
+                            }
+                        } label: {
+                            Text("\(product.displayName) - \(product.displayPrice)")
+                        }
+                    }
+                } label: {
+                    Label("Leave a Tip", systemImage: "heart.fill")
                         .font(.callout.weight(.semibold))
                 }
+                .disabled(store.purchaseInProgressProductID != nil)
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-            )
         }
-        .buttonStyle(.plain)
-        .disabled(store.purchaseInProgressProductID != nil)
     }
 }
 
@@ -934,6 +889,7 @@ private struct EmptyState: View {
 }
 
 private struct GlassSegmentedPicker: View {
+    @EnvironmentObject private var model: PlayerModel
     @Binding var selection: DetailTab
 
     var body: some View {
@@ -948,7 +904,7 @@ private struct GlassSegmentedPicker: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .background(
-                            selection == tab ? Color.primary.opacity(0.08) : Color.clear,
+                            selection == tab ? model.currentStation.accentColor.opacity(0.12) : Color.clear,
                             in: Capsule()
                         )
                 }
@@ -1070,6 +1026,23 @@ private enum AppSurface {
         #else
         Color(.secondarySystemBackground)
         #endif
+    }
+}
+
+private extension Station {
+    var accentColor: Color {
+        switch id {
+        case "aab4d149-92fa-4386-9c1e-d938ecb66ee3":
+            return Color(red: 0.10, green: 0.72, blue: 0.68)
+        case "6b53fc38-ed57-4738-80d6-f9fddf981054":
+            return Color(red: 0.86, green: 0.36, blue: 0.16)
+        case "df197c3e-0137-4665-95f3-0fc5cec1ee1e":
+            return Color(red: 0.18, green: 0.56, blue: 0.94)
+        case "887ec509-2be8-433e-a27e-d05c1dc21278":
+            return Color(red: 0.78, green: 0.22, blue: 0.88)
+        default:
+            return .accentColor
+        }
     }
 }
 

@@ -1,0 +1,18 @@
+app = "andon-cone-history"
+primary_region = "iad"
+
+[build]
+  dockerfile = "collector/Dockerfile"
+
+[env]
+  SQLITE_PATH = "/data/andon-history.sqlite3"
+  POLL_INTERVAL = "1m"
+
+[[mounts]]
+  source = "andon_history_data"
+  destination = "/data"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

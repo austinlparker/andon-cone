@@ -22,6 +22,12 @@ The app polls two Andon Labs endpoints every 20 seconds:
 
 The audio itself still streams from `https://streaming.live365.com/<mount>` (see the table above). Live365's own metadata endpoint is not used because the Andon endpoints expose richer station state.
 
+## Play History Collector
+
+The public metadata API exposes current station state, not historical plays. The `collector/` directory contains a small Go service that can run on Fly.io with a persistent SQLite volume and poll the metadata once per minute.
+
+The collector writes append-only observation facts plus derived airing intervals, so it can answer both "how often was this track observed?" and "when does it tend to play?" See `collector/README.md` for schema notes, local commands, Fly setup, and example SQL.
+
 ## App Targets
 
 The shared SwiftUI source lives in `Sources/AndonCone`.
@@ -35,6 +41,20 @@ The shared SwiftUI source lives in `Sources/AndonCone`.
 CarPlay requires Apple approval for the managed CarPlay Audio entitlement. Until that entitlement is added to the developer account and provisioning profile, leave `com.apple.developer.carplay-audio` out of the active entitlements file; otherwise Xcode cannot create a valid development profile for iPhone installs. The CarPlay scene configuration is present, but the app will not appear on a real CarPlay head unit until the entitlement is approved and re-added.
 
 The CarPlay implementation presents the station list with `CPListTemplate`; selecting a station starts playback and pushes the shared `CPNowPlayingTemplate`. The app publishes `MPNowPlayingInfoCenter` metadata, lock screen and Dynamic Island station artwork, and handles remote play/pause commands.
+
+## Optional Tips
+
+Andon Cone includes an optional StoreKit tip jar. Tips are consumable in-app purchases and do not unlock content, playback, metadata, CarPlay, or any other feature.
+
+Create these consumable products in App Store Connect before submitting a build that shows the tip jar:
+
+| Product ID | Suggested Reference Name | Suggested Price |
+| --- | --- | --- |
+| `io.aparker.andoncone.tip.small` | Small Tip | $0.99 |
+| `io.aparker.andoncone.tip.medium` | Medium Tip | $4.99 |
+| `io.aparker.andoncone.tip.large` | Large Tip | $9.99 |
+
+Suggested App Review note: "The Support Andon Cone screen contains optional StoreKit tips. Tips support app development and do not unlock content or functionality."
 
 ## Requirements
 

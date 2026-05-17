@@ -1,4 +1,5 @@
 import SwiftUI
+import StoreKit
 
 private enum DetailTab: String, CaseIterable, Identifiable {
     case schedule = "Schedule"
@@ -10,26 +11,36 @@ private enum DetailTab: String, CaseIterable, Identifiable {
 
 struct RadioAppView: View {
     @EnvironmentObject private var model: PlayerModel
+    @StateObject private var tipStore = TipStore()
     @State private var selectedTab: DetailTab = .schedule
+    @State private var isShowingTipJar = false
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        #if os(macOS)
-        macOSRoot
-        #else
-        GeometryReader { geometry in
-            Group {
-                if geometry.size.width >= 760 {
-                    wideLayout
-                } else {
-                    compactLayout
+        Group {
+            #if os(macOS)
+            macOSRoot
+            #else
+            GeometryReader { geometry in
+                Group {
+                    if geometry.size.width >= 760 {
+                        wideLayout
+                    } else {
+                        compactLayout
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(AppBackground(url: model.currentDetail?.imageURL))
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(AppBackground(url: model.currentDetail?.imageURL))
+            .navigationTitle("Andon FM")
+            #endif
         }
-        .navigationTitle("Andon FM")
-        #endif
+        .sheet(isPresented: $isShowingTipJar) {
+            TipJarView(store: tipStore)
+        }
+        .task {
+            await tipStore.loadProducts()
+        }
     }
 
     #if os(macOS)
@@ -44,6 +55,7 @@ struct RadioAppView: View {
                 .navigationSplitViewColumnWidth(min: 230, ideal: 260, max: 320)
         } detail: {
             MacStationDetail(
+                showTipJar: { isShowingTipJar = true },
                 tabPicker: { tabPicker },
                 tabContent: { tabContent }
             )
@@ -75,7 +87,13 @@ struct RadioAppView: View {
     private var compactLayout: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                StationRail()
+                HStack(alignment: .top, spacing: 10) {
+                    StationRail()
+                    SupportButton {
+                        isShowingTipJar = true
+                    }
+                    .padding(.top, 4)
+                }
                 NowPlayingPanel()
                 tabPicker
                 tabContent
@@ -92,6 +110,10 @@ struct RadioAppView: View {
             }
 
             Spacer()
+
+            SupportButton {
+                isShowingTipJar = true
+            }
 
             Button {
                 openURL(PlayerModel.radioPageURL)
@@ -124,6 +146,7 @@ struct RadioAppView: View {
 #if os(macOS)
 private struct MacStationDetail<TabPicker: View, TabContent: View>: View {
     @EnvironmentObject private var model: PlayerModel
+    let showTipJar: () -> Void
     let tabPicker: () -> TabPicker
     let tabContent: () -> TabContent
 
@@ -140,6 +163,11 @@ private struct MacStationDetail<TabPicker: View, TabContent: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(.background)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                SupportButton(action: showTipJar)
+            }
+        }
     }
 }
 
@@ -766,6 +794,130 @@ private struct StationArtwork: View {
                 .font(.system(size: size * 0.38))
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+private struct SupportButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "heart.fill")
+                .glassIcon()
+        }
+        .buttonStyle(.plain)
+        .help("Support Andon Cone")
+        .accessibilityLabel("Support Andon Cone")
+    }
+}
+
+private struct TipJarView: View {
+    @ObservedObject var store: TipStore
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Support Andon Cone")
+                        .font(.title2.weight(.bold))
+                    Text("Optional tips support development and do not unlock content or features.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Close")
+            }
+
+            if store.isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 24)
+            } else if store.products.isEmpty {
+                EmptyState(text: "Tips are not available yet")
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(store.products) { product in
+                        TipProductRow(product: product, store: store)
+                    }
+                }
+            }
+
+            if let message = store.message {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(22)
+        .frame(minWidth: 320, idealWidth: 380, maxWidth: 460)
+        #if os(iOS)
+        .presentationDetents([.medium])
+        #endif
+    }
+}
+
+private struct TipProductRow: View {
+    let product: Product
+    @ObservedObject var store: TipStore
+
+    private var isPurchasing: Bool {
+        store.purchaseInProgressProductID == product.id
+    }
+
+    var body: some View {
+        Button {
+            Task {
+                await store.purchase(product)
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "heart.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.tint)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(product.displayName)
+                        .font(.headline)
+                    Text(product.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                if isPurchasing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Text(product.displayPrice)
+                        .font(.callout.weight(.semibold))
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(store.purchaseInProgressProductID != nil)
     }
 }
 

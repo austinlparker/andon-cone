@@ -1,10 +1,13 @@
 #if os(iOS)
 import CarPlay
+import Combine
 import UIKit
 
 @MainActor
 final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     private var interfaceController: CPInterfaceController?
+    private var stationTemplate: CPListTemplate?
+    private var cancellables: Set<AnyCancellable> = []
 
     func templateApplicationScene(
         _ templateApplicationScene: CPTemplateApplicationScene,
@@ -13,7 +16,12 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     ) {
         self.interfaceController = interfaceController
         PlayerModel.shared.start()
-        interfaceController.setRootTemplate(makeStationTemplate(), animated: false, completion: nil)
+
+        let template = makeStationTemplate()
+        stationTemplate = template
+        interfaceController.setRootTemplate(template, animated: false, completion: nil)
+
+        observeMetadataChanges()
     }
 
     func templateApplicationScene(
@@ -21,11 +29,36 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         didDisconnect interfaceController: CPInterfaceController,
         from window: CPWindow
     ) {
+        cancellables.removeAll()
+        stationTemplate = nil
         self.interfaceController = nil
     }
 
+    /// Rebuild list items when metadata refreshes so the CarPlay UI doesn't
+    /// stay frozen on whatever was current at scene-connect time.
+    private func observeMetadataChanges() {
+        let model = PlayerModel.shared
+        Publishers.CombineLatest(model.$tracksByID, model.$detailsByID)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _, _ in
+                self?.refreshStationItems()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func refreshStationItems() {
+        stationTemplate?.updateSections([makeStationSection()])
+    }
+
     private func makeStationTemplate() -> CPListTemplate {
-        let items = PlayerModel.stations.map { station in
+        let template = CPListTemplate(title: "Andon FM", sections: [makeStationSection()])
+        template.emptyViewTitleVariants = ["No stations"]
+        template.emptyViewSubtitleVariants = ["Open the app once to refresh metadata."]
+        return template
+    }
+
+    private func makeStationSection() -> CPListSection {
+        let items = PlayerModel.stations.map { station -> CPListItem in
             let track = PlayerModel.shared.tracksByID[station.id]
             let listeners = PlayerModel.shared.detailsByID[station.id]?.stats?.currentListeners
             let detailText = [
@@ -45,12 +78,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             }
             return item
         }
-
-        let section = CPListSection(items: items)
-        let template = CPListTemplate(title: "Andon FM", sections: [section])
-        template.emptyViewTitleVariants = ["No stations"]
-        template.emptyViewSubtitleVariants = ["Open the app once to refresh metadata."]
-        return template
+        return CPListSection(items: items)
     }
 
     private func showNowPlaying() {

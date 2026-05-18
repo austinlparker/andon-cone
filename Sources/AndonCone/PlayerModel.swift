@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import SwiftUI
 #if os(iOS)
 import MediaPlayer
 import UIKit
@@ -11,7 +12,7 @@ private func isCancellation(_ error: Error) -> Bool {
     return Task.isCancelled
 }
 
-private struct RadioAPIClient {
+private final class RadioAPIClient: @unchecked Sendable {
     private static let metadataEndpoint = URL(string: "https://os.andonlabs.com/api/public/radio/metadata")!
     private static let statsEndpoint = URL(string: "https://os.andonlabs.com/api/public/radio/stats")!
 
@@ -21,7 +22,10 @@ private struct RadioAPIClient {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 10
         config.timeoutIntervalForResource = 20
-        config.waitsForConnectivity = false
+        // Queue across a brief connectivity blip rather than failing immediately;
+        // this is a polling app and an in-call retry is friendlier than a visible error.
+        config.waitsForConnectivity = true
+        config.urlCache = nil
         session = URLSession(configuration: config)
     }
 
@@ -61,17 +65,9 @@ private struct RadioAPIClient {
     }
 
     private static func noCacheRequest(for url: URL) -> URLRequest {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        let cacheBust = URLQueryItem(name: "_", value: String(Int(Date().timeIntervalSince1970)))
-        var queryItems = components?.queryItems ?? []
-        queryItems.append(cacheBust)
-        components?.queryItems = queryItems
-
-        var request = URLRequest(url: components?.url ?? url)
+        var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.timeoutInterval = 10
-        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
         return request
     }
 
@@ -90,12 +86,13 @@ private struct RadioAPIClient {
 }
 
 #if os(iOS)
+// UIImage is effectively immutable once initialized from data, so vending it
+// from an MPMediaItemArtwork closure is safe across actors. @unchecked is on the wrapper.
 private struct NowPlayingArtwork: @unchecked Sendable {
     let mediaItemArtwork: MPMediaItemArtwork
 
     init(image: UIImage) {
-        let artworkImage = image
-        mediaItemArtwork = MPMediaItemArtwork(boundsSize: artworkImage.size) { _ in artworkImage }
+        mediaItemArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
     }
 }
 #endif
@@ -107,6 +104,7 @@ struct Station: Identifiable, Hashable, Sendable {
     let name: String
     let host: String
     let streamURL: URL
+    let accentColor: Color
 }
 
 struct AndonTrack: Decodable, Equatable, Sendable {
@@ -162,6 +160,21 @@ struct AndonStationDetail: Decodable, Equatable, Sendable, Identifiable {
         let durationMinutes: Int
 
         var id: Date { startedAt }
+
+        /// Human-readable progress for a block relative to a clock time
+        /// (defaulted to now). Extracted from the view so it's unit-testable.
+        func progressText(relativeTo now: Date = Date()) -> String {
+            let elapsed = Int(now.timeIntervalSince(startedAt) / 60)
+            if elapsed < 0 {
+                let formatter = RelativeDateTimeFormatter()
+                formatter.unitsStyle = .short
+                return "starts \(formatter.localizedString(for: startedAt, relativeTo: now))"
+            }
+            if elapsed >= durationMinutes {
+                return "\(durationMinutes)m block ending"
+            }
+            return "\(elapsed)m / \(durationMinutes)m"
+        }
     }
 
     struct Tweet: Decodable, Equatable, Sendable, Identifiable {
@@ -218,30 +231,35 @@ final class PlayerModel: ObservableObject {
             id: "aab4d149-92fa-4386-9c1e-d938ecb66ee3",
             name: "Backlink Broadcast",
             host: "Gemini 3.1 Pro Preview",
-            streamURL: URL(string: "https://streaming.live365.com/a13541")!
+            streamURL: URL(string: "https://streaming.live365.com/a13541")!,
+            accentColor: Color(red: 0.10, green: 0.72, blue: 0.68)
         ),
         Station(
             id: "6b53fc38-ed57-4738-80d6-f9fddf981054",
             name: "Thinking Frequencies",
             host: "Claude Opus 4.7",
-            streamURL: URL(string: "https://streaming.live365.com/a46431")!
+            streamURL: URL(string: "https://streaming.live365.com/a46431")!,
+            accentColor: Color(red: 0.86, green: 0.36, blue: 0.16)
         ),
         Station(
             id: "df197c3e-0137-4665-95f3-0fc5cec1ee1e",
             name: "OpenAIR",
             host: "GPT 5.5",
-            streamURL: URL(string: "https://streaming.live365.com/a81044")!
+            streamURL: URL(string: "https://streaming.live365.com/a81044")!,
+            accentColor: Color(red: 0.18, green: 0.56, blue: 0.94)
         ),
         Station(
             id: "887ec509-2be8-433e-a27e-d05c1dc21278",
             name: "Grok and Roll",
             host: "Grok 4.3",
-            streamURL: URL(string: "https://streaming.live365.com/a15419")!
+            streamURL: URL(string: "https://streaming.live365.com/a15419")!,
+            accentColor: Color(red: 0.78, green: 0.22, blue: 0.88)
         ),
     ]
 
     @Published var currentStation: Station
     @Published private(set) var isPlaying = false
+    @Published private(set) var isBuffering = false
     @Published var volume: Float = 1.0
     @Published private(set) var isMuted = false
     @Published private(set) var tracksByID: [String: AndonTrack] = [:]
@@ -253,6 +271,8 @@ final class PlayerModel: ObservableObject {
 
     private var player: AVPlayer?
     private var playerItemStatusObservation: NSKeyValueObservation?
+    private var playerTimeControlObservation: NSKeyValueObservation?
+    private var playbackNotificationObservers: [NSObjectProtocol] = []
     private var metadataPollingTask: Task<Void, Never>?
     private var manualMetadataRefreshTask: Task<Void, Never>?
     private var volumeBeforeMute: Float = 1.0
@@ -273,7 +293,7 @@ final class PlayerModel: ObservableObject {
         guard metadataPollingTask == nil else { return }
         metadataPollingTask = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.performMetadataRefresh()
+                await self?.performMetadataRefresh(force: false)
                 try? await Task.sleep(for: .seconds(20))
             }
         }
@@ -297,6 +317,9 @@ final class PlayerModel: ObservableObject {
     }
 
     func play(_ station: Station) {
+        // Tapping the currently-playing station should be a no-op,
+        // not a stream restart. CarPlay relies on this.
+        guard station != currentStation || !isPlaying else { return }
         currentStation = station
         startPlayback(for: station)
     }
@@ -313,6 +336,19 @@ final class PlayerModel: ObservableObject {
         if isPlaying {
             startPlayback(for: station)
         }
+    }
+
+    func nextStation() {
+        guard let index = Self.stations.firstIndex(of: currentStation) else { return }
+        let next = Self.stations[(index + 1) % Self.stations.count]
+        selectStation(next)
+    }
+
+    func previousStation() {
+        guard let index = Self.stations.firstIndex(of: currentStation) else { return }
+        let count = Self.stations.count
+        let prev = Self.stations[(index - 1 + count) % count]
+        selectStation(prev)
     }
 
     func setVolume(_ value: Float) {
@@ -350,7 +386,7 @@ final class PlayerModel: ObservableObject {
     func refreshAllMetadata() {
         manualMetadataRefreshTask?.cancel()
         manualMetadataRefreshTask = Task { [weak self] in
-            await self?.performMetadataRefresh()
+            await self?.performMetadataRefresh(force: true)
         }
     }
 
@@ -382,8 +418,9 @@ final class PlayerModel: ObservableObject {
         newPlayer.isMuted = isMuted
         player = newPlayer
         isPlaying = true
+        isBuffering = true
         updateNowPlayingInfo()
-        observe(item: playerItem)
+        observe(player: newPlayer, item: playerItem)
         newPlayer.play()
     }
 
@@ -392,25 +429,69 @@ final class PlayerModel: ObservableObject {
         player?.pause()
         player = nil
         isPlaying = false
+        isBuffering = false
         updateNowPlayingInfo()
     }
 
-    private func observe(item: AVPlayerItem) {
+    private func observe(player: AVPlayer, item: AVPlayerItem) {
         playerItemStatusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             guard item.status == .failed else { return }
             Task { @MainActor [weak self] in
-                self?.isPlaying = false
+                self?.handlePlaybackFailure()
             }
         }
+
+        playerTimeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+            // KVO can fire off-main; capture the status and hop back to main for state mutation.
+            let waiting = (player.timeControlStatus == .waitingToPlayAtSpecifiedRate)
+            Task { @MainActor [weak self] in
+                self?.isBuffering = waiting
+            }
+        }
+
+        let center = NotificationCenter.default
+        let stallObserver = center.addObserver(
+            forName: AVPlayerItem.playbackStalledNotification,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.isBuffering = true
+            }
+        }
+        let failureObserver = center.addObserver(
+            forName: AVPlayerItem.failedToPlayToEndTimeNotification,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handlePlaybackFailure()
+            }
+        }
+        playbackNotificationObservers = [stallObserver, failureObserver]
+    }
+
+    private func handlePlaybackFailure() {
+        isPlaying = false
+        isBuffering = false
+        updateNowPlayingInfo()
     }
 
     private func clearPlayerObservers() {
         playerItemStatusObservation?.invalidate()
         playerItemStatusObservation = nil
+        playerTimeControlObservation?.invalidate()
+        playerTimeControlObservation = nil
+        for observer in playbackNotificationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        playbackNotificationObservers = []
     }
 
-    private func performMetadataRefresh() async {
-        guard !isRefreshingMetadata else { return }
+    private func performMetadataRefresh(force: Bool) async {
+        // Polling backs off if a refresh is in flight. Manual refreshes force
+        // a fresh attempt — the user pressed something, they expect a fetch.
+        if !force, isRefreshingMetadata { return }
 
         isRefreshingMetadata = true
         defer {
@@ -418,49 +499,52 @@ final class PlayerModel: ObservableObject {
             updateMetadataStaleness()
         }
 
-        var refreshErrors: [String] = []
-        var didRefresh = false
+        async let metadataTask = apiClient.fetchMetadata()
+        async let statsTask = apiClient.fetchStats()
+
+        var lastError: String?
+        var anySuccess = false
 
         do {
-            let response = try await apiClient.fetchMetadata()
-            tracksByID = response.stations
-            didRefresh = true
+            let response = try await metadataTask
+            // Merge so a station temporarily missing from the response
+            // doesn't blink out of the UI.
+            for (id, track) in response.stations {
+                tracksByID[id] = track
+            }
+            anySuccess = true
         } catch {
-            guard !isCancellation(error) else { return }
-            refreshErrors.append("metadata: \(error.localizedDescription)")
+            if isCancellation(error) { return }
+            lastError = "metadata: \(error.localizedDescription)"
             NSLog("Andon Cone metadata refresh failed: %@", error.localizedDescription)
         }
 
         do {
-            let response = try await apiClient.fetchStats()
+            let response = try await statsTask
             applyStats(response.stations)
-            didRefresh = true
+            anySuccess = true
         } catch {
-            guard !isCancellation(error) else { return }
-            refreshErrors.append("stats: \(error.localizedDescription)")
+            if isCancellation(error) { return }
+            lastError = "stats: \(error.localizedDescription)"
             NSLog("Andon Cone stats refresh failed: %@", error.localizedDescription)
         }
 
-        if didRefresh {
+        if anySuccess {
             lastMetadataRefresh = Date()
-            metadataErrorMessage = refreshErrors.first
+            metadataErrorMessage = lastError
             updateNowPlayingInfo()
         } else {
-            metadataErrorMessage = refreshErrors.first ?? "Metadata refresh failed"
-            markMetadataStale()
+            metadataErrorMessage = lastError ?? "Metadata refresh failed"
+            metadataIsStale = true
         }
     }
 
     private func applyStats(_ details: [AndonStationDetail]) {
-        var dict: [String: AndonStationDetail] = [:]
+        var dict = detailsByID
         for detail in details {
             dict[detail.id] = detail
         }
         detailsByID = dict
-    }
-
-    private func markMetadataStale() {
-        metadataIsStale = true
     }
 
     private func updateMetadataStaleness() {
@@ -541,28 +625,20 @@ final class PlayerModel: ObservableObject {
     #if os(iOS)
     private func loadNowPlayingArtwork(from url: URL, for stationID: String) {
         guard !artworkLoadingURLs.contains(url) else { return }
-
         artworkLoadingURLs.insert(url)
-        let apiClient = apiClient
-        Task { [weak self] in
-            do {
-                let artwork = try await apiClient.fetchArtwork(from: url)
 
-                await MainActor.run {
-                    if let self {
-                        _ = self.artworkLoadingURLs.remove(url)
-                        self.artworkByURL[url] = artwork
-                        if self.currentStation.id == stationID {
-                            self.updateNowPlayingInfo()
-                        }
-                    }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let artwork = try await self.apiClient.fetchArtwork(from: url)
+                self.artworkLoadingURLs.remove(url)
+                self.artworkByURL[url] = artwork
+                if self.currentStation.id == stationID {
+                    self.updateNowPlayingInfo()
                 }
             } catch {
-                await MainActor.run {
-                    _ = self?.artworkLoadingURLs.remove(url)
-                }
-
-                guard !isCancellation(error) else { return }
+                self.artworkLoadingURLs.remove(url)
+                if isCancellation(error) { return }
                 NSLog("Andon Cone artwork load failed: %@", error.localizedDescription)
             }
         }

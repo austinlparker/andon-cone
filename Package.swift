@@ -24,6 +24,10 @@ let package = Package(
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("AVKit")
             ]
+        ),
+        .testTarget(
+            name: "AndonConeTests",
+            dependencies: ["AndonCone"]
         )
     ]
 )

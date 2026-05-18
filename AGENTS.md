@@ -29,12 +29,15 @@ The bundle identifier for both App Store platforms is `io.aparker.andoncone`.
 - `Config/macOS/Info.plist` must keep `LSApplicationCategoryType` set to `public.app-category.music`.
 - Optional tips use StoreKit consumable in-app purchases. Keep them optional and never gate playback, metadata, CarPlay, or any other app functionality behind a tip.
 - Tip product IDs are `io.aparker.andoncone.tip.small`, `io.aparker.andoncone.tip.medium`, and `io.aparker.andoncone.tip.large`.
+- iOS uses MusicKit for the add-to-library affordance. The capability is self-service (enable it on the App ID in the developer portal — no Apple review needed), and `NSAppleMusicUsageDescription` lives in `Config/iOS/Info.plist`. Keep library access optional; never gate playback or metadata on Apple Music sign-in or subscription. macOS deliberately does not expose an add-to-library button because `MusicLibrary.add()` is iOS-only and the read APIs are macOS 14+; the Apple Music link on the album line is the macOS equivalent.
 
 ## App Behavior
 
 - Stream URLs are Live365 mount URLs embedded in `PlayerModel.stations`.
 - Rich metadata comes from `https://os.andonlabs.com/api/public/radio/metadata` and `https://os.andonlabs.com/api/public/radio/stats`.
-- Metadata polling is intentionally automatic; avoid reintroducing visible manual refresh UI unless explicitly requested.
+- Track-level album info is enriched anonymously via the iTunes Search API (`https://itunes.apple.com/search`). No API key. Results require an artist substring match before being accepted to guard against bad matches on live/remix versions.
+- Metadata polling is intentionally automatic; avoid reintroducing visible manual refresh UI unless explicitly requested. Stale/error states are intentionally silent in the chrome — only a small `wifi.exclamationmark` indicator surfaces when staleness *and* an error coincide.
+- Image and track-metadata caches live under `~/Library/Caches/AndonCone/` (`Artwork/` for SwiftUI images, `Tracks/` for JSON-encoded `EnrichedTrack` lookups, both keyed by SHA256 of the source identifier). Both survive relaunches; clearing them is a no-op the next launch will repopulate.
 - iOS now-playing info must include station artwork through `MPNowPlayingInfoCenter` so Lock Screen, Dynamic Island, and CarPlay surfaces show channel art.
 
 ## Collector Behavior

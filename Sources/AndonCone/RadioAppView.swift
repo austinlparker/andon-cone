@@ -1,6 +1,9 @@
 import SwiftUI
 import StoreKit
 import AVKit
+#if os(iOS)
+import UIKit
+#endif
 
 private enum DetailTab: String, CaseIterable, Identifiable {
     case schedule = "Schedule"
@@ -10,13 +13,43 @@ private enum DetailTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+// Cached: re-creating a formatter on every SwiftUI render is wasteful and shows up in scrolling.
+// nonisolated(unsafe) is required for Swift 6 since RelativeDateTimeFormatter isn't Sendable;
+// the only use is `localizedString(for:relativeTo:)` which is read-only and thread-safe.
+nonisolated(unsafe) private let relativeDateFormatter: RelativeDateTimeFormatter = {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .short
+    return formatter
+}()
+
+private func relativeText(for date: Date) -> String {
+    // RelativeDateTimeFormatter renders the very recent past as "in 0 sec." / "0 sec. ago",
+    // which reads strangely right after a refresh. Treat anything under five seconds as "just now".
+    let interval = abs(Date().timeIntervalSince(date))
+    if interval < 5 { return "just now" }
+    return relativeDateFormatter.localizedString(for: date, relativeTo: Date())
+}
+
+@MainActor
+private func playHaptic() {
+    #if os(iOS)
+    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    #endif
+}
+
 struct RadioAppView: View {
     @EnvironmentObject private var model: PlayerModel
     @EnvironmentObject private var appChrome: AppChromeModel
+    @EnvironmentObject private var artworkCache: ArtworkCache
+    @EnvironmentObject private var metadata: MusicMetadataClient
+    @EnvironmentObject private var library: MusicLibraryService
     @StateObject private var tipStore = TipStore()
     @State private var selectedTab: DetailTab = .schedule
     @State private var selectedStationID: Station.ID? = PlayerModel.stations[0].id
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -48,6 +81,48 @@ struct RadioAppView: View {
         .onChange(of: model.currentStation.id) { stationID in
             selectedStationID = stationID
         }
+        .onChange(of: model.detailsByID) { details in
+            // Prefetch every station's artwork as soon as we know the URLs so switching
+            // stations becomes an instant memory-cache hit, no network round trip.
+            for detail in details.values {
+                if let url = detail.imageURL {
+                    artworkCache.prefetch(url)
+                }
+            }
+        }
+        .onChange(of: model.tracksByID) { tracks in
+            // Enrich every station's track in the background so a station switch shows
+            // album art / metadata immediately. Lookups dedupe internally.
+            for track in tracks.values {
+                metadata.enrich(track)
+            }
+        }
+        .onChange(of: metadata.version) { _ in
+            // Whenever an enriched track lands, kick the artwork cache so the high-res
+            // album art is hot by the time the view next reads it.
+            for track in model.tracksByID.values {
+                if let enriched = metadata.enriched(for: track), let url = enriched.artworkURL {
+                    artworkCache.prefetch(url)
+                }
+            }
+        }
+        .alert("Apple Music", isPresented: Binding(
+            get: { library.pendingMessage != nil },
+            set: { if !$0 { library.dismissMessage() } }
+        ), actions: {
+            Button("OK", role: .cancel) { library.dismissMessage() }
+        }, message: {
+            Text(library.pendingMessage ?? "")
+        })
+        #if os(iOS)
+        .onAppear {
+            // Land on Now Playing in compact mode so the listener-facing surface is the first thing
+            // a user sees. The navigation bar provides a sidebar toggle to reach the station list.
+            if horizontalSizeClass == .compact {
+                columnVisibility = .detailOnly
+            }
+        }
+        #endif
     }
 
     private var tabPicker: some View {
@@ -56,7 +131,9 @@ struct RadioAppView: View {
 
     private func collapseSidebarAfterSelection() {
         #if os(iOS)
-        columnVisibility = .detailOnly
+        if horizontalSizeClass == .compact {
+            columnVisibility = .detailOnly
+        }
         #endif
     }
 
@@ -141,6 +218,9 @@ private struct StationSourceList: View {
                 }
             }
 
+            #if os(iOS)
+            // macOS reaches About through the application menu, so we don't duplicate
+            // it (or the radio page link) into the sidebar.
             Section("App") {
                 Button {
                     appChrome.isShowingAbout = true
@@ -162,31 +242,10 @@ private struct StationSourceList: View {
                 }
                 #endif
             }
-
-            metadataFooter
+            #endif
         }
         .listStyle(.sidebar)
         .navigationTitle("Andon FM")
-    }
-
-    private var metadataFooter: some View {
-        Group {
-            if model.metadataIsStale || model.metadataErrorMessage != nil {
-                VStack(alignment: .leading, spacing: 4) {
-                    if model.metadataIsStale {
-                        Label("Metadata stale", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                    }
-
-                    if let error = model.metadataErrorMessage {
-                        Text(error)
-                            .lineLimit(2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .font(.caption2)
-            }
-        }
     }
 }
 
@@ -217,18 +276,27 @@ private struct StationSourceRow: View {
 
 private struct MacNowPlayingHero: View {
     @EnvironmentObject private var model: PlayerModel
+    @EnvironmentObject private var metadata: MusicMetadataClient
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.openURL) private var openURL
 
     private var detail: AndonStationDetail? { model.currentDetail }
     private var track: AndonTrack? { model.currentTrack }
+    private var enriched: EnrichedTrack? { track.flatMap { metadata.enriched(for: $0) } }
 
     var body: some View {
         let accent = model.currentStation.accentColor
         let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
 
         HStack(alignment: .center, spacing: 24) {
-            StationArtwork(url: detail?.imageURL, size: 190)
-                .shadow(color: accent.opacity(colorScheme == .dark ? 0.28 : 0.18), radius: 18, y: 10)
+            StationArtwork(
+                url: enriched?.artworkURL ?? detail?.imageURL,
+                fallbackURL: enriched != nil ? detail?.imageURL : nil,
+                size: 190
+            )
+            .shadow(color: accent.opacity(colorScheme == .dark ? 0.28 : 0.18), radius: 18, y: 10)
+            .accessibilityLabel(enriched?.albumTitle ?? model.currentStation.name)
 
             VStack(alignment: .leading, spacing: 10) {
                 stationContext
@@ -236,14 +304,21 @@ private struct MacNowPlayingHero: View {
                 Divider()
                     .padding(.vertical, 4)
 
-                Text(track?.displayTitle ?? "Loading now playing")
-                    .font(.title.weight(.bold))
-                    .lineLimit(2)
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(track?.displayTitle ?? "Loading now playing")
+                        .font(.title.weight(.bold))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                    // LibraryButton intentionally omitted on macOS — Apple's MusicLibrary.add
+                    // API isn't available there. Album line below carries the Apple Music link.
+                }
 
                 Text(track?.displayArtist ?? "Waiting for metadata")
                     .font(.title3)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+
+                albumLine
 
                 metadataLine
 
@@ -253,9 +328,47 @@ private struct MacNowPlayingHero: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(22)
-        .background(accent.opacity(colorScheme == .dark ? 0.12 : 0.07), in: shape)
-        .background(.regularMaterial, in: shape)
-        .overlay(shape.stroke(accent.opacity(colorScheme == .dark ? 0.26 : 0.18), lineWidth: 1))
+        .modifier(HeroCardBackground(accent: accent,
+                                     shape: shape,
+                                     reduceTransparency: reduceTransparency,
+                                     colorScheme: colorScheme,
+                                     elevation: .compact))
+    }
+
+    @ViewBuilder
+    private var albumLine: some View {
+        if let enriched {
+            if let url = enriched.appleMusicURL {
+                Button {
+                    openURL(url)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(albumDisplayText(enriched))
+                            .lineLimit(1)
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption2.weight(.semibold))
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Open in Apple Music")
+                .accessibilityLabel("Open \(enriched.albumTitle) in Apple Music")
+            } else {
+                Text(albumDisplayText(enriched))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func albumDisplayText(_ enriched: EnrichedTrack) -> String {
+        if let year = enriched.releaseYear {
+            return "\(enriched.albumTitle) · \(year)"
+        }
+        return enriched.albumTitle
     }
 
     private var stationContext: some View {
@@ -278,9 +391,12 @@ private struct MacNowPlayingHero: View {
                     .monospacedDigit()
             }
 
-            if model.metadataIsStale {
-                Label("Stale", systemImage: "exclamationmark.triangle.fill")
+            // Only surface metadata problems once they've persisted long enough to be
+            // stale — a single transient fetch failure shouldn't show chrome.
+            if model.metadataIsStale, let error = model.metadataErrorMessage {
+                Label("Metadata offline", systemImage: "wifi.exclamationmark")
                     .foregroundStyle(.orange)
+                    .help(error)
             }
         }
         .font(.caption)
@@ -288,45 +404,90 @@ private struct MacNowPlayingHero: View {
     }
 }
 
+/// Mac transport mirrors the iOS pill: prominent circular play button on the left,
+/// secondary actions (reconnect, mute) and the volume slider sharing one glass capsule.
 private struct MacInlineTransportControls: View {
     @EnvironmentObject private var model: PlayerModel
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button {
-                model.togglePlayback()
-            } label: {
-                Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(width: 38, height: 32)
-            }
-            .buttonStyle(.borderless)
-            .keyboardShortcut(.space, modifiers: [])
-            .help(model.isPlaying ? "Pause" : "Play")
+        HStack(spacing: 8) {
+            playButton
 
-            Button {
-                model.reconnect()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .frame(width: 30, height: 30)
+            if model.isPlaying {
+                reconnectButton
             }
-            .buttonStyle(.borderless)
-            .disabled(!model.isPlaying)
-            .help("Reconnect stream")
 
-            HStack(spacing: 8) {
-                Image(systemName: "speaker.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Slider(value: Binding(
-                    get: { Double(model.volume) },
-                    set: { model.setVolume(Float($0)) }
-                ), in: 0 ... 1)
-                .frame(width: 130)
-            }
-            .padding(.leading, 2)
+            muteButton
+
+            Slider(value: Binding(
+                get: { Double(model.volume) },
+                set: { model.setVolume(Float($0)) }
+            ), in: 0 ... 1)
+            .tint(model.currentStation.accentColor)
+            .controlSize(.small)
+            // Explicit width — `maxWidth` collapses to the slider's tiny intrinsic size
+            // once the surrounding pill becomes fixedSize.
+            .frame(width: 180)
         }
-        .controlSize(.small)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .appGlass(in: Capsule(), interactive: true)
+        .fixedSize(horizontal: true, vertical: true)
+    }
+
+    private var playButton: some View {
+        Button {
+            model.togglePlayback()
+        } label: {
+            ZStack {
+                Circle().fill(Color.primary.opacity(0.08))
+                if model.isBuffering {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .controlSize(.mini)
+                } else {
+                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.primary)
+                }
+            }
+            .frame(width: 28, height: 28)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        // Space-as-menu-shortcut is unreliable on macOS (the menu bar competes with focused
+        // controls). Attaching it to a button in the active window is the dependable form.
+        .keyboardShortcut(.space, modifiers: [])
+        .help(model.isPlaying ? "Pause (Space)" : "Play (Space)")
+        .accessibilityLabel(model.isBuffering ? "Buffering" : (model.isPlaying ? "Pause" : "Play"))
+    }
+
+    private var reconnectButton: some View {
+        Button {
+            model.reconnect()
+        } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Reconnect stream (⌘R)")
+    }
+
+    private var muteButton: some View {
+        Button {
+            model.toggleMute()
+        } label: {
+            Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(model.isMuted ? "Unmute (⌘M)" : "Mute (⌘M)")
     }
 }
 
@@ -334,10 +495,14 @@ private struct MacInlineTransportControls: View {
 
 private struct NowPlayingPanel: View {
     @EnvironmentObject private var model: PlayerModel
+    @EnvironmentObject private var metadata: MusicMetadataClient
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.openURL) private var openURL
 
     private var detail: AndonStationDetail? { model.currentDetail }
     private var track: AndonTrack? { model.currentTrack }
+    private var enriched: EnrichedTrack? { track.flatMap { metadata.enriched(for: $0) } }
 
     var body: some View {
         let accent = model.currentStation.accentColor
@@ -345,20 +510,28 @@ private struct NowPlayingPanel: View {
 
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 18) {
-                StationArtwork(url: detail?.imageURL, size: 132)
+                // Album art wins over station logo whenever iTunes Search returned a match.
+                // Station logo doubles as the fallback during the brief window before
+                // album bytes land, so we never flash a placeholder mid-transition.
+                StationArtwork(
+                    url: enriched?.artworkURL ?? detail?.imageURL,
+                    fallbackURL: enriched != nil ? detail?.imageURL : nil,
+                    size: 132
+                )
+                .accessibilityLabel(enriched?.albumTitle ?? model.currentStation.name)
 
                 VStack(alignment: .leading, spacing: 10) {
                     stationContext
 
-                    Text(trackStatusTitle)
-                        .font(.title2.weight(.bold))
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
+                    titleRow
 
                     Text(trackStatusSubtitle)
                         .font(.title3)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+
+                    albumLine
 
                     metadataLine
                 }
@@ -368,10 +541,64 @@ private struct NowPlayingPanel: View {
             TransportControls()
         }
         .padding(18)
-        .background(accent.opacity(colorScheme == .dark ? 0.14 : 0.08), in: shape)
-        .background(.regularMaterial, in: shape)
-        .overlay(shape.stroke(accent.opacity(colorScheme == .dark ? 0.28 : 0.18), lineWidth: 1))
-        .shadow(color: accent.opacity(colorScheme == .dark ? 0.18 : 0.11), radius: 24, y: 14)
+        .modifier(HeroCardBackground(accent: accent,
+                                     shape: shape,
+                                     reduceTransparency: reduceTransparency,
+                                     colorScheme: colorScheme,
+                                     elevation: .lifted))
+    }
+
+    private var titleRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(trackStatusTitle)
+                .font(.title2.weight(.bold))
+                .lineLimit(3)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
+
+            #if os(iOS)
+            // macOS surfaces the same affordance through the Apple Music URL on the album line —
+            // MusicLibrary.add() is iOS-only at the API level.
+            if let trackID = enriched?.trackID {
+                LibraryButton(trackID: trackID)
+            }
+            #endif
+        }
+    }
+
+    @ViewBuilder
+    private var albumLine: some View {
+        if let enriched {
+            if let url = enriched.appleMusicURL {
+                Button {
+                    openURL(url)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(albumDisplayText(enriched))
+                            .lineLimit(1)
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption2.weight(.semibold))
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open \(enriched.albumTitle) in Apple Music")
+            } else {
+                Text(albumDisplayText(enriched))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func albumDisplayText(_ enriched: EnrichedTrack) -> String {
+        if let year = enriched.releaseYear {
+            return "\(enriched.albumTitle) · \(year)"
+        }
+        return enriched.albumTitle
     }
 
     private var stationContext: some View {
@@ -409,13 +636,48 @@ private struct NowPlayingPanel: View {
                     .monospacedDigit()
             }
 
-            if model.metadataIsStale {
-                Label("Stale", systemImage: "exclamationmark.triangle.fill")
+            // Stays hidden until a real connection problem has persisted past the
+            // staleness threshold; transient blips don't show chrome.
+            if model.metadataIsStale, let error = model.metadataErrorMessage {
+                Label("Metadata offline", systemImage: "wifi.exclamationmark")
                     .foregroundStyle(.orange)
+                    .accessibilityLabel("Metadata offline: \(error)")
             }
         }
         .font(.caption)
         .foregroundStyle(.secondary)
+    }
+}
+
+private enum HeroElevation {
+    case compact
+    case lifted
+}
+
+private struct HeroCardBackground<S: Shape>: ViewModifier {
+    let accent: Color
+    let shape: S
+    let reduceTransparency: Bool
+    let colorScheme: ColorScheme
+    let elevation: HeroElevation
+
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content
+                .background(AppSurface.elevated, in: shape)
+                .overlay(shape.stroke(accent.opacity(0.5), lineWidth: 1.5))
+                .shadow(color: accent.opacity(colorScheme == .dark ? 0.18 : 0.10),
+                        radius: elevation == .lifted ? 18 : 12,
+                        y: elevation == .lifted ? 10 : 6)
+        } else {
+            content
+                .background(accent.opacity(colorScheme == .dark ? 0.14 : 0.08), in: shape)
+                .background(.regularMaterial, in: shape)
+                .overlay(shape.stroke(accent.opacity(colorScheme == .dark ? 0.28 : 0.18), lineWidth: 1))
+                .shadow(color: accent.opacity(colorScheme == .dark ? 0.18 : 0.11),
+                        radius: elevation == .lifted ? 24 : 18,
+                        y: elevation == .lifted ? 14 : 10)
+        }
     }
 }
 
@@ -426,37 +688,12 @@ private struct TransportControls: View {
         VStack(spacing: 14) {
             HStack {
                 Spacer(minLength: 0)
-                Button {
-                    model.togglePlayback()
-                } label: {
-                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 32, weight: .semibold))
-                        .symbolRenderingMode(.monochrome)
-                        .frame(width: 64, height: 64)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.space, modifiers: [])
-                .foregroundStyle(.primary)
-                .background(
-                    Circle()
-                        .fill(Color.primary.opacity(0.08))
-                )
-                .help(model.isPlaying ? "Pause" : "Play")
+                playButton
                 Spacer(minLength: 0)
             }
 
             HStack(spacing: 14) {
-                Button {
-                    model.toggleMute()
-                } label: {
-                    Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                        .frame(width: 34, height: 34)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .help(model.isMuted ? "Unmute" : "Mute")
+                muteButton
 
                 Slider(value: Binding(
                     get: { Double(model.volume) },
@@ -464,63 +701,125 @@ private struct TransportControls: View {
                 ), in: 0 ... 1)
                 .tint(model.currentStation.accentColor)
 
-                AirPlayRoutePicker(player: model.routePickerPlayer)
-                    .frame(width: 34, height: 34)
-                    .help("Choose AirPlay output")
-                    .accessibilityLabel("Choose AirPlay output")
-
+                routePicker
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 14)
-            .padding(.vertical, 9)
+            .padding(.vertical, 6)
             .appGlass(in: Capsule(), interactive: true)
         }
     }
-}
 
-private struct AirPlayRoutePicker: View {
-    let player: AVPlayer?
+    private var playButton: some View {
+        Button {
+            playHaptic()
+            model.togglePlayback()
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color.primary.opacity(0.08))
+                if model.isBuffering {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .controlSize(.large)
+                } else {
+                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 32, weight: .semibold))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(.primary)
+                }
+            }
+            .frame(width: 64, height: 64)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.space, modifiers: [])
+        .help(playButtonHelp)
+        .accessibilityLabel(playButtonAccessibilityLabel)
+    }
 
-    var body: some View {
-        PlatformRoutePicker(player: player)
-            .frame(width: 34, height: 34)
+    private var playButtonHelp: String {
+        if model.isBuffering { return "Buffering" }
+        return model.isPlaying ? "Pause" : "Play"
+    }
+
+    private var playButtonAccessibilityLabel: String {
+        if model.isBuffering { return "Buffering" }
+        return model.isPlaying ? "Pause" : "Play"
+    }
+
+    private var muteButton: some View {
+        Button {
+            model.toggleMute()
+        } label: {
+            // 44pt frame meets the iOS HIG touch-target floor without enlarging the glyph.
+            Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(model.isMuted ? "Unmute" : "Mute")
+        .accessibilityLabel(model.isMuted ? "Unmute" : "Mute")
+    }
+
+    private var routePicker: some View {
+        PlatformRoutePicker(player: model.routePickerPlayer)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+            .help("Choose AirPlay output")
+            .accessibilityLabel("Choose AirPlay output")
     }
 }
 
 private struct StationTintBackdrop: View {
+    @EnvironmentObject private var cache: ArtworkCache
     let accent: Color
     let imageURL: URL?
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         ZStack {
             AppSurface.primary
 
-            GeometryReader { geometry in
-                ZStack {
-                    accent
-                        .opacity(0.08)
+            if !reduceTransparency {
+                GeometryReader { geometry in
+                    ZStack {
+                        accent.opacity(0.08)
 
-                    AsyncImage(url: imageURL) { phase in
-                        switch phase {
-                        case let .success(image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .blur(radius: 52)
-                                .saturation(1.2)
-                                .opacity(0.18)
-                        default:
+                        if let imageURL, let img = cache.image(for: imageURL) {
+                            backdropImage(img)
+                                .frame(width: geometry.size.width, height: geometry.size.height)
+                                .clipped()
+                        } else {
                             accent.opacity(0.05)
                         }
-                    }
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .clipped()
 
-                    AppSurface.primary.opacity(0.72)
+                        AppSurface.primary.opacity(0.72)
+                    }
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func backdropImage(_ image: PlatformImage) -> some View {
+        #if canImport(UIKit)
+        Image(uiImage: image)
+            .resizable()
+            .scaledToFill()
+            .blur(radius: 52)
+            .saturation(1.2)
+            .opacity(0.18)
+        #elseif canImport(AppKit)
+        Image(nsImage: image)
+            .resizable()
+            .scaledToFill()
+            .blur(radius: 52)
+            .saturation(1.2)
+            .opacity(0.18)
+        #endif
     }
 }
 
@@ -571,7 +870,7 @@ private struct SchedulePanel: View {
             if let block = model.currentDetail?.currentBlock {
                 BlockRow(title: "On now", block: block)
             } else {
-                EmptyState(text: "No current block")
+                EmptyState(text: "No current block", systemImage: "calendar")
             }
 
             let upcoming = model.currentDetail?.upcomingBlocks ?? []
@@ -593,7 +892,7 @@ private struct TopTracksPanel: View {
         let songs = model.currentDetail?.contentStats?.topSongsWeek ?? []
         VStack(alignment: .leading, spacing: 10) {
             if songs.isEmpty {
-                EmptyState(text: "No top tracks yet")
+                EmptyState(text: "No top tracks yet", systemImage: "music.note.list")
             } else {
                 ForEach(Array(songs.prefix(8).enumerated()), id: \.element.id) { index, song in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -633,7 +932,7 @@ private struct BuzzPanel: View {
         let tweets = model.currentDetail?.tweets ?? []
         VStack(alignment: .leading, spacing: 10) {
             if tweets.isEmpty {
-                EmptyState(text: "No recent activity")
+                EmptyState(text: "No recent activity", systemImage: "bubble.left.and.bubble.right")
             } else {
                 ForEach(tweets.prefix(5)) { tweet in
                     Button {
@@ -662,7 +961,10 @@ private struct BuzzPanel: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(10)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        // Plain tinted fill rather than .thinMaterial — the surrounding panel is
+                        // already material, and material-on-material reads flat.
+                        .background(Color.primary.opacity(0.04),
+                                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .stroke(Color.primary.opacity(0.07), lineWidth: 1)
@@ -687,7 +989,7 @@ private struct BlockRow: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text(blockProgressText(for: block))
+                Text(block.progressText())
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -706,23 +1008,93 @@ private struct BlockRow: View {
     }
 }
 
+private struct LibraryButton: View {
+    @EnvironmentObject private var library: MusicLibraryService
+    let trackID: String
+
+    var body: some View {
+        let status = library.status(for: trackID)
+
+        Button {
+            switch status {
+            case .inLibrary, .adding, .checking:
+                break
+            default:
+                library.addToLibrary(trackID: trackID)
+            }
+        } label: {
+            iconView(for: status)
+                .frame(width: 28, height: 28)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(status == .adding || status == .checking)
+        .help(helpText(for: status))
+        .accessibilityLabel(accessibilityLabel(for: status))
+        .task(id: trackID) {
+            library.refreshStatus(for: trackID)
+        }
+    }
+
+    @ViewBuilder
+    private func iconView(for status: MusicLibraryService.LibraryStatus) -> some View {
+        switch status {
+        case .inLibrary:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.tint)
+        case .adding, .checking:
+            ProgressView()
+                .controlSize(.small)
+        default:
+            Image(systemName: "plus.circle")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func helpText(for status: MusicLibraryService.LibraryStatus) -> String {
+        switch status {
+        case .inLibrary: return "In your library"
+        case .adding: return "Adding…"
+        case .checking: return "Checking library…"
+        case .notAuthorized: return "Tap to enable Apple Music access"
+        case .noSubscription: return "Requires an Apple Music subscription"
+        case .unavailable: return "Apple Music unavailable"
+        case .error(let msg): return msg
+        default: return "Add to your Apple Music library"
+        }
+    }
+
+    private func accessibilityLabel(for status: MusicLibraryService.LibraryStatus) -> String {
+        switch status {
+        case .inLibrary: return "In your Apple Music library"
+        case .adding: return "Adding to library"
+        case .checking: return "Checking library"
+        default: return "Add to Apple Music library"
+        }
+    }
+}
+
 private struct StationArtwork: View {
+    @EnvironmentObject private var cache: ArtworkCache
     let url: URL?
+    /// Shown while `url` is still loading on first appearance — typically the station
+    /// logo when `url` is an album-art URL. Prevents a placeholder flash during the
+    /// brief window between metadata enrichment and the artwork bytes arriving.
+    var fallbackURL: URL? = nil
     let size: CGFloat
+
+    private var displayedImage: PlatformImage? {
+        if let url, let image = cache.image(for: url) { return image }
+        if let fallbackURL, let image = cache.image(for: fallbackURL) { return image }
+        return nil
+    }
 
     var body: some View {
         Group {
-            if let url {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case let .success(image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    default:
-                        placeholder
-                    }
-                }
+            if let image = displayedImage {
+                cachedImage(image)
             } else {
                 placeholder
             }
@@ -733,6 +1105,27 @@ private struct StationArtwork: View {
             RoundedRectangle(cornerRadius: max(8, size * 0.12), style: .continuous)
                 .stroke(Color.primary.opacity(0.1), lineWidth: 1)
         )
+        .task(id: url) {
+            // Trigger fetch on miss. The cache dedupes, so re-asking is cheap.
+            if let url { cache.prefetch(url) }
+        }
+        .task(id: fallbackURL) {
+            if let fallbackURL { cache.prefetch(fallbackURL) }
+        }
+        .animation(.easeInOut(duration: 0.25), value: displayedImage != nil)
+    }
+
+    @ViewBuilder
+    private func cachedImage(_ image: PlatformImage) -> some View {
+        #if canImport(UIKit)
+        Image(uiImage: image)
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+        #elseif canImport(AppKit)
+        Image(nsImage: image)
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+        #endif
     }
 
     private var placeholder: some View {
@@ -753,6 +1146,35 @@ private struct AboutView: View {
     private let blogURL = URL(string: "https://andonlabs.com/blog/andon-fm")!
 
     var body: some View {
+        #if os(iOS)
+        NavigationStack {
+            content
+                .navigationTitle("About")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        #else
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding([.horizontal, .top], 16)
+            content
+        }
+        .frame(minWidth: 360, idealWidth: 440, maxWidth: 520, minHeight: 460)
+        #endif
+    }
+
+    @ViewBuilder
+    private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
@@ -809,13 +1231,11 @@ private struct AboutView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+
+                versionFooter
             }
             .padding(22)
         }
-        .frame(minWidth: 320, idealWidth: 420, maxWidth: 500)
-        #if os(iOS)
-        .presentationDetents([.medium, .large])
-        #endif
     }
 
     private var header: some View {
@@ -835,18 +1255,17 @@ private struct AboutView: View {
             }
 
             Spacer()
-
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .bold))
-                    .frame(width: 32, height: 32)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .help("Close")
         }
+    }
+
+    private var versionFooter: some View {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return Text("Version \(version) (\(build))")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -886,13 +1305,25 @@ private struct TipMenu: View {
 
 private struct EmptyState: View {
     let text: String
+    let systemImage: String
 
     var body: some View {
-        Text(text)
-            .font(.callout)
-            .foregroundStyle(.secondary)
+        if #available(iOS 17.0, macOS 14.0, *) {
+            ContentUnavailableView(text, systemImage: systemImage)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+        } else {
+            VStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .font(.title)
+                    .foregroundStyle(.secondary)
+                Text(text)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.vertical, 24)
+        }
     }
 }
 
@@ -903,20 +1334,7 @@ private struct GlassSegmentedPicker: View {
     var body: some View {
         HStack(spacing: 4) {
             ForEach(DetailTab.allCases) { tab in
-                Button {
-                    selection = tab
-                } label: {
-                    Text(tab.rawValue)
-                        .font(.callout.weight(selection == tab ? .semibold : .regular))
-                        .foregroundStyle(selection == tab ? .primary : .secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(
-                            selection == tab ? model.currentStation.accentColor.opacity(0.12) : Color.clear,
-                            in: Capsule()
-                        )
-                }
-                .buttonStyle(.plain)
+                tabButton(for: tab)
             }
         }
         .padding(5)
@@ -924,48 +1342,48 @@ private struct GlassSegmentedPicker: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Details")
     }
-}
 
-private struct AppBackground: View {
-    let url: URL?
-
-    var body: some View {
-        ZStack {
-            AppSurface.primary
-
-            AmbientArtworkBackdrop(url: url)
-                .opacity(0.82)
+    private func tabButton(for tab: DetailTab) -> some View {
+        Button {
+            selection = tab
+        } label: {
+            Text(tab.rawValue)
+                .font(.callout.weight(selection == tab ? .semibold : .regular))
+                .foregroundStyle(selection == tab ? .primary : .secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule().fill(
+                        selection == tab
+                            ? model.currentStation.accentColor.opacity(0.22)
+                            : Color.clear
+                    )
+                )
         }
-        .ignoresSafeArea()
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selection == tab ? .isSelected : [])
     }
 }
 
-private struct AmbientArtworkBackdrop: View {
-    let url: URL?
+private struct AppGlassModifier<S: Shape>: ViewModifier {
+    let shape: S
+    let tint: Color?
+    let interactive: Bool
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    var body: some View {
-        GeometryReader { geometry in
-            Group {
-                if let url {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case let .success(image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        default:
-                            AppSurface.primary
-                        }
-                    }
-                } else {
-                    AppSurface.primary
-                }
-            }
-            .frame(width: geometry.size.width, height: geometry.size.height)
-            .blur(radius: 42)
-            .saturation(1.35)
-            .opacity(0.28)
-            .overlay(AppSurface.primary.opacity(0.64))
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content
+                .background(AppSurface.elevated, in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(0.18), lineWidth: 1))
+        } else if #available(iOS 26.0, macOS 26.0, *) {
+            let baseGlass = tint.map { Glass.regular.tint($0) } ?? Glass.regular
+            content.glassEffect(baseGlass.interactive(interactive), in: shape)
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(0.11), lineWidth: 1))
+                .shadow(color: Color.primary.opacity(0.05), radius: 12, y: 6)
         }
     }
 }
@@ -981,37 +1399,12 @@ private extension View {
             )
     }
 
-    @ViewBuilder
     func appGlass<S: Shape>(
         in shape: S,
         tint: Color? = nil,
         interactive: Bool = false
     ) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            let baseGlass = tint.map { Glass.regular.tint($0) } ?? Glass.regular
-            self.glassEffect(baseGlass.interactive(interactive), in: shape)
-        } else {
-            self
-                .background(.ultraThinMaterial, in: shape)
-                .overlay(shape.stroke(Color.primary.opacity(0.11), lineWidth: 1))
-                .shadow(color: Color.primary.opacity(0.05), radius: 12, y: 6)
-        }
-    }
-
-    func glassIcon() -> some View {
-        font(.system(size: 17, weight: .semibold))
-            .frame(width: 44, height: 38)
-            .contentShape(Capsule())
-            .appGlass(in: Capsule(), interactive: true)
-    }
-
-    @ViewBuilder
-    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
-        if condition {
-            transform(self)
-        } else {
-            self
-        }
+        modifier(AppGlassModifier(shape: shape, tint: tint, interactive: interactive))
     }
 }
 
@@ -1026,7 +1419,8 @@ private enum AppSurface {
         #endif
     }
 
-    static var secondary: Color {
+    /// Solid surface used when Reduce Transparency is on.
+    static var elevated: Color {
         #if os(iOS)
         Color(.secondarySystemGroupedBackground)
         #elseif os(macOS)
@@ -1035,39 +1429,4 @@ private enum AppSurface {
         Color(.secondarySystemBackground)
         #endif
     }
-}
-
-private extension Station {
-    var accentColor: Color {
-        switch id {
-        case "aab4d149-92fa-4386-9c1e-d938ecb66ee3":
-            return Color(red: 0.10, green: 0.72, blue: 0.68)
-        case "6b53fc38-ed57-4738-80d6-f9fddf981054":
-            return Color(red: 0.86, green: 0.36, blue: 0.16)
-        case "df197c3e-0137-4665-95f3-0fc5cec1ee1e":
-            return Color(red: 0.18, green: 0.56, blue: 0.94)
-        case "887ec509-2be8-433e-a27e-d05c1dc21278":
-            return Color(red: 0.78, green: 0.22, blue: 0.88)
-        default:
-            return .accentColor
-        }
-    }
-}
-
-private func relativeText(for date: Date) -> String {
-    let formatter = RelativeDateTimeFormatter()
-    formatter.unitsStyle = .short
-    return formatter.localizedString(for: date, relativeTo: Date())
-}
-
-private func blockProgressText(for block: AndonStationDetail.Block) -> String {
-    let elapsed = Int(Date().timeIntervalSince(block.startedAt) / 60)
-    let total = block.durationMinutes
-    if elapsed < 0 {
-        return "starts \(relativeText(for: block.startedAt))"
-    }
-    if elapsed >= total {
-        return "\(total)m block ending"
-    }
-    return "\(elapsed)m / \(total)m"
 }

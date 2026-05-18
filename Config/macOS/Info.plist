@@ -24,5 +24,7 @@
 	<string>public.app-category.music</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>Andon Cone uses your Apple Music library to save tracks you discover while listening.</string>
 </dict>
 </plist>

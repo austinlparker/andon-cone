@@ -8,6 +8,9 @@ import SwiftUI
 struct AndonConeApp: App {
     @StateObject private var model = PlayerModel.shared
     @StateObject private var appChrome = AppChromeModel()
+    @StateObject private var artworkCache = ArtworkCache()
+    @StateObject private var metadata = MusicMetadataClient()
+    @StateObject private var library = MusicLibraryService()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -23,6 +26,9 @@ struct AndonConeApp: App {
             RadioAppView()
                 .environmentObject(model)
                 .environmentObject(appChrome)
+                .environmentObject(artworkCache)
+                .environmentObject(metadata)
+                .environmentObject(library)
                 .task {
                     model.start()
                 }
@@ -74,7 +80,9 @@ private struct AppInfoCommands: Commands {
 }
 
 private struct PlayerCommands: Commands {
-    let model: PlayerModel
+    // ObservedObject so button labels (Play/Pause, Mute/Unmute, disabled state)
+    // refresh as model state changes.
+    @ObservedObject var model: PlayerModel
 
     var body: some Commands {
         CommandMenu("Player") {
@@ -82,6 +90,29 @@ private struct PlayerCommands: Commands {
                 model.togglePlayback()
             }
             .keyboardShortcut(.space, modifiers: [])
+
+            Button(model.isMuted ? "Unmute" : "Mute") {
+                model.toggleMute()
+            }
+            .keyboardShortcut("m", modifiers: .command)
+
+            Button("Reconnect Stream") {
+                model.reconnect()
+            }
+            .keyboardShortcut("r", modifiers: .command)
+            .disabled(!model.isPlaying)
+
+            Divider()
+
+            Button("Next Station") {
+                model.nextStation()
+            }
+            .keyboardShortcut("]", modifiers: [.command, .option])
+
+            Button("Previous Station") {
+                model.previousStation()
+            }
+            .keyboardShortcut("[", modifiers: [.command, .option])
         }
     }
 }

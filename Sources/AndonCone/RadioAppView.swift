@@ -1036,20 +1036,27 @@ private struct LibraryButton: View {
         }
     }
 
-    @ViewBuilder
     private func iconView(for status: MusicLibraryService.LibraryStatus) -> some View {
-        switch status {
-        case .inLibrary:
-            Image(systemName: "checkmark.circle.fill")
-                .font(.title3)
-                .foregroundStyle(.tint)
-        case .adding, .checking:
-            ProgressView()
-                .controlSize(.small)
-        default:
-            Image(systemName: "plus.circle")
-                .font(.title3)
-                .foregroundStyle(.secondary)
+        // ZStack with a Color.clear anchor keeps the row's intrinsic height stable across
+        // case swaps — Image and ProgressView otherwise report different sizes and baselines,
+        // so flipping between them visibly nudges the artist line below the title.
+        ZStack {
+            Color.clear.frame(width: 22, height: 22)
+
+            switch status {
+            case .inLibrary:
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+            case .adding, .checking:
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+            default:
+                Image(systemName: "plus.circle")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

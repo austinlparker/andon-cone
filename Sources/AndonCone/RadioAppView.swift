@@ -549,7 +549,7 @@ private struct NowPlayingPanel: View {
     }
 
     private var titleRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .top, spacing: 8) {
             Text(trackStatusTitle)
                 .font(.title2.weight(.bold))
                 .lineLimit(3)
@@ -561,6 +561,7 @@ private struct NowPlayingPanel: View {
             // MusicLibrary.add() is iOS-only at the API level.
             if let trackID = enriched?.trackID {
                 LibraryButton(trackID: trackID)
+                    .padding(.top, 3)
             }
             #endif
         }
@@ -1037,9 +1038,8 @@ private struct LibraryButton: View {
     }
 
     private func iconView(for status: MusicLibraryService.LibraryStatus) -> some View {
-        // ZStack with a Color.clear anchor keeps the row's intrinsic height stable across
-        // case swaps — Image and ProgressView otherwise report different sizes and baselines,
-        // so flipping between them visibly nudges the artist line below the title.
+        // ZStack with a Color.clear anchor keeps the icon's intrinsic size stable across
+        // case swaps so flipping from the plus symbol to ProgressView doesn't resize the row.
         ZStack {
             Color.clear.frame(width: 22, height: 22)
 

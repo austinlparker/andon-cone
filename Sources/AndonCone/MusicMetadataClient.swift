@@ -43,6 +43,7 @@ struct EnrichedTrack: Codable, Equatable, Sendable, Identifiable {
 /// counter ticks when results land.
 @MainActor
 final class MusicMetadataClient: ObservableObject {
+    static let shared = MusicMetadataClient()
 
     /// Bumped each time a new entry lands in the cache so views re-render.
     @Published private(set) var version: Int = 0

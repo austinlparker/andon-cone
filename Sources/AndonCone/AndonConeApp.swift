@@ -9,7 +9,7 @@ struct AndonConeApp: App {
     @StateObject private var model = PlayerModel.shared
     @StateObject private var appChrome = AppChromeModel()
     @StateObject private var artworkCache = ArtworkCache()
-    @StateObject private var metadata = MusicMetadataClient()
+    @StateObject private var metadata = MusicMetadataClient.shared
     @StateObject private var library = MusicLibraryService()
     @Environment(\.scenePhase) private var scenePhase
 

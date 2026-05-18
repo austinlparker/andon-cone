@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import Foundation
 import SwiftUI
 #if os(iOS)
@@ -279,6 +280,8 @@ final class PlayerModel: ObservableObject {
     #if os(iOS)
     private var artworkByURL: [URL: NowPlayingArtwork] = [:]
     private var artworkLoadingURLs: Set<URL> = []
+    private let metadataClient = MusicMetadataClient.shared
+    private var metadataVersionCancellable: AnyCancellable?
     #endif
     private let apiClient: RadioAPIClient
 
@@ -287,6 +290,7 @@ final class PlayerModel: ObservableObject {
         apiClient = RadioAPIClient()
         configureAudioSession()
         configureRemoteCommands()
+        observeMetadataEnrichment()
     }
 
     func start() {
@@ -595,13 +599,26 @@ final class PlayerModel: ObservableObject {
         #endif
     }
 
+    private func observeMetadataEnrichment() {
+        #if os(iOS)
+        metadataVersionCancellable = metadataClient.$version
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.updateNowPlayingInfo()
+                }
+            }
+        #endif
+    }
+
     private func updateNowPlayingInfo() {
         #if os(iOS)
-        let artworkURL = currentDetail?.imageURL
+        let track = currentTrack
+        let enriched = enrichedCurrentTrack(for: track)
         var info: [String: Any] = [
-            MPMediaItemPropertyAlbumTitle: currentStation.name,
-            MPMediaItemPropertyTitle: currentTrack?.displayTitle ?? currentStation.name,
-            MPMediaItemPropertyArtist: currentTrack?.displayArtist ?? currentStation.host,
+            MPMediaItemPropertyAlbumTitle: enriched?.albumTitle ?? currentStation.name,
+            MPMediaItemPropertyTitle: enriched?.trackName ?? track?.displayTitle ?? currentStation.name,
+            MPMediaItemPropertyArtist: enriched?.artistName ?? track?.displayArtist ?? currentStation.host,
             MPNowPlayingInfoPropertyIsLiveStream: true,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
         ]
@@ -610,19 +627,47 @@ final class PlayerModel: ObservableObject {
             info[MPMediaItemPropertyComments] = "\(listeners) current listeners"
         }
 
-        if let artworkURL {
-            if let artwork = artworkByURL[artworkURL] {
-                info[MPMediaItemPropertyArtwork] = artwork.mediaItemArtwork
-            } else {
-                loadNowPlayingArtwork(from: artworkURL, for: currentStation.id)
-            }
-        }
+        applyNowPlayingArtwork(
+            preferredURL: enriched?.artworkURL,
+            fallbackURL: currentDetail?.imageURL,
+            to: &info
+        )
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         #endif
     }
 
     #if os(iOS)
+    private func enrichedCurrentTrack(for track: AndonTrack?) -> EnrichedTrack? {
+        guard let track else { return nil }
+        if let enriched = metadataClient.enriched(for: track) {
+            return enriched
+        }
+        metadataClient.enrich(track)
+        return nil
+    }
+
+    private func applyNowPlayingArtwork(
+        preferredURL: URL?,
+        fallbackURL: URL?,
+        to info: inout [String: Any]
+    ) {
+        if let preferredURL {
+            if let artwork = artworkByURL[preferredURL] {
+                info[MPMediaItemPropertyArtwork] = artwork.mediaItemArtwork
+                return
+            }
+            loadNowPlayingArtwork(from: preferredURL, for: currentStation.id)
+        }
+
+        guard let fallbackURL, fallbackURL != preferredURL else { return }
+        if let artwork = artworkByURL[fallbackURL] {
+            info[MPMediaItemPropertyArtwork] = artwork.mediaItemArtwork
+        } else {
+            loadNowPlayingArtwork(from: fallbackURL, for: currentStation.id)
+        }
+    }
+
     private func loadNowPlayingArtwork(from url: URL, for stationID: String) {
         guard !artworkLoadingURLs.contains(url) else { return }
         artworkLoadingURLs.insert(url)

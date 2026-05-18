@@ -19,6 +19,7 @@
 		100000000000000000000110 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000014 /* Assets.xcassets */; };
 		100000000000000000000111 /* TipStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* TipStore.swift */; };
 		100000000000000000000112 /* TipStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* TipStore.swift */; };
+		100000000000000000000113 /* EmbraceIO in Frameworks */ = {isa = PBXBuildFile; productRef = 100000000000000000001001 /* EmbraceIO */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +41,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				100000000000000000000113 /* EmbraceIO in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -126,6 +128,9 @@
 			dependencies = (
 			);
 			name = "Andon Cone iOS";
+			packageProductDependencies = (
+				100000000000000000001001 /* EmbraceIO */,
+			);
 			productName = "Andon Cone iOS";
 			productReference = 100000000000000000000021 /* Andon Cone.app */;
 			productType = "com.apple.product-type.application";
@@ -184,6 +189,9 @@
 				Base,
 			);
 			mainGroup = 100000000000000000000301;
+			packageReferences = (
+				100000000000000000001000 /* XCRemoteSwiftPackageReference "embrace-apple-sdk" */,
+			);
 			productRefGroup = 100000000000000000000304 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -474,6 +482,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		100000000000000000001000 /* XCRemoteSwiftPackageReference "embrace-apple-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/embrace-io/embrace-apple-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.18.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		100000000000000000001001 /* EmbraceIO */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 100000000000000000001000 /* XCRemoteSwiftPackageReference "embrace-apple-sdk" */;
+			productName = EmbraceIO;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 100000000000000000000801 /* Project object */;
 }

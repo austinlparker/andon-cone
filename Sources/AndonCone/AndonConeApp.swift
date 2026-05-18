@@ -1,3 +1,7 @@
+#if os(iOS)
+import EmbraceIO
+#endif
+import Foundation
 import SwiftUI
 
 @main
@@ -5,6 +9,10 @@ struct AndonConeApp: App {
     @StateObject private var model = PlayerModel.shared
     @StateObject private var appChrome = AppChromeModel()
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        configureCrashReporting()
+    }
 
     var body: some Scene {
         mainWindow
@@ -33,6 +41,18 @@ struct AndonConeApp: App {
         #endif
     }
 
+}
+
+private func configureCrashReporting() {
+    #if os(iOS)
+    let options = Embrace.Options(appId: "7fxwh")
+
+    do {
+        try Embrace.setup(options: options).start()
+    } catch {
+        NSLog("Andon Cone Embrace setup failed: %@", error.localizedDescription)
+    }
+    #endif
 }
 
 @MainActor

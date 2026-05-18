@@ -153,6 +153,14 @@ private struct StationSourceList: View {
                 } label: {
                     Label("Open Andon FM", systemImage: "safari")
                 }
+
+                #if DEBUG && os(iOS)
+                Button(role: .destructive) {
+                    fatalError("Intentional Embrace crash test")
+                } label: {
+                    Label("Crash Test", systemImage: "exclamationmark.triangle")
+                }
+                #endif
             }
 
             metadataFooter

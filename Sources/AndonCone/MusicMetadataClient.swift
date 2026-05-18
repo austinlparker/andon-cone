@@ -20,6 +20,19 @@ struct EnrichedTrack: Codable, Equatable, Sendable, Identifiable {
         guard let releaseDate else { return nil }
         return String(Calendar(identifier: .gregorian).component(.year, from: releaseDate))
     }
+
+    /// The `https://music.apple.com/...` URL routed through the `music://` scheme so it
+    /// opens directly in Music.app on iOS and macOS instead of bouncing through Safari.
+    /// Falls back to the original URL if the host isn't `music.apple.com`.
+    var musicAppURL: URL? {
+        guard let appleMusicURL,
+              var components = URLComponents(url: appleMusicURL, resolvingAgainstBaseURL: false),
+              components.scheme == "https",
+              components.host == "music.apple.com"
+        else { return appleMusicURL }
+        components.scheme = "music"
+        return components.url ?? appleMusicURL
+    }
 }
 
 /// Looks up `EnrichedTrack` info from the iTunes Search API.

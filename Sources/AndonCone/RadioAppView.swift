@@ -338,7 +338,7 @@ private struct MacNowPlayingHero: View {
     @ViewBuilder
     private var albumLine: some View {
         if let enriched {
-            if let url = enriched.appleMusicURL {
+            if let url = enriched.musicAppURL {
                 Button {
                     openURL(url)
                 } label: {
@@ -569,7 +569,7 @@ private struct NowPlayingPanel: View {
     @ViewBuilder
     private var albumLine: some View {
         if let enriched {
-            if let url = enriched.appleMusicURL {
+            if let url = enriched.musicAppURL {
                 Button {
                     openURL(url)
                 } label: {

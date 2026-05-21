@@ -40,6 +40,16 @@ final class MusicLibraryService: ObservableObject {
 
     func dismissMessage() { pendingMessage = nil }
 
+    /// Pure classification for an add-to-library failure description. MusicKit reports
+    /// "subscription required" inconsistently as a typed or untyped error depending on
+    /// the failure path, so we fall back to a case-insensitive substring check.
+    nonisolated static func classifyAddError(description: String) -> LibraryStatus {
+        if description.localizedCaseInsensitiveContains("subscri") {
+            return .noSubscription
+        }
+        return .error(description)
+    }
+
     /// Lightweight passive check — does not trigger an auth prompt. If the user hasn't
     /// authorized yet, we stay in `.notInLibrary` so the add button still works on tap.
     func refreshStatus(for trackID: String) {
@@ -134,13 +144,12 @@ final class MusicLibraryService: ObservableObject {
 
     private func handleAddError(_ error: Error, trackID: String) {
         let description = error.localizedDescription
-        // MusicKit surfaces "subscription required" as either a typed or string error
-        // depending on flow — fall back to a substring check to be robust.
-        if description.localizedCaseInsensitiveContains("subscri") {
-            statuses[trackID] = .noSubscription
+        let status = Self.classifyAddError(description: description)
+        statuses[trackID] = status
+        switch status {
+        case .noSubscription:
             pendingMessage = "An Apple Music subscription is required to save tracks."
-        } else {
-            statuses[trackID] = .error(description)
+        default:
             pendingMessage = description
             NSLog("Andon Cone add-to-library failed: %@", description)
         }

@@ -7,222 +7,6 @@ import MediaPlayer
 import UIKit
 #endif
 
-private func isCancellation(_ error: Error) -> Bool {
-    if error is CancellationError { return true }
-    if let urlError = error as? URLError, urlError.code == .cancelled { return true }
-    return Task.isCancelled
-}
-
-private final class RadioAPIClient: @unchecked Sendable {
-    private static let metadataEndpoint = URL(string: "https://os.andonlabs.com/api/public/radio/metadata")!
-    private static let statsEndpoint = URL(string: "https://os.andonlabs.com/api/public/radio/stats")!
-
-    private let session: URLSession
-
-    init() {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 20
-        // Queue across a brief connectivity blip rather than failing immediately;
-        // this is a polling app and an in-call retry is friendlier than a visible error.
-        config.waitsForConnectivity = true
-        config.urlCache = nil
-        session = URLSession(configuration: config)
-    }
-
-    func fetchMetadata() async throws -> MetadataResponse {
-        let data = try await data(for: Self.noCacheRequest(for: Self.metadataEndpoint))
-        return try Self.decoder.decode(MetadataResponse.self, from: data)
-    }
-
-    func fetchStats() async throws -> StatsResponse {
-        let data = try await data(for: Self.noCacheRequest(for: Self.statsEndpoint))
-        return try Self.decoder.decode(StatsResponse.self, from: data)
-    }
-
-    #if os(iOS)
-    func fetchArtwork(from url: URL) async throws -> NowPlayingArtwork {
-        var request = URLRequest(url: url)
-        request.cachePolicy = .returnCacheDataElseLoad
-        request.timeoutInterval = 10
-
-        let data = try await data(for: request)
-        guard let image = UIImage(data: data) else {
-            throw URLError(.cannotDecodeContentData)
-        }
-        return NowPlayingArtwork(image: image)
-    }
-    #endif
-
-    func invalidateAndCancel() {
-        session.invalidateAndCancel()
-    }
-
-    private func data(for request: URLRequest) async throws -> Data {
-        let (data, response) = try await session.data(for: request)
-        try Self.validate(response)
-        try Task.checkCancellation()
-        return data
-    }
-
-    private static func noCacheRequest(for url: URL) -> URLRequest {
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        request.timeoutInterval = 10
-        return request
-    }
-
-    private static func validate(_ response: URLResponse) throws {
-        guard let httpResponse = response as? HTTPURLResponse else { return }
-        guard (200 ... 299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
-    }
-
-    private static let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }()
-}
-
-#if os(iOS)
-// UIImage is effectively immutable once initialized from data, so vending it
-// from an MPMediaItemArtwork closure is safe across actors. @unchecked is on the wrapper.
-private struct NowPlayingArtwork: @unchecked Sendable {
-    let mediaItemArtwork: MPMediaItemArtwork
-
-    init(image: UIImage) {
-        mediaItemArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-    }
-}
-#endif
-
-struct Station: Identifiable, Hashable, Sendable {
-    /// Andon Labs station UUID. Matches keys in /api/public/radio/metadata
-    /// and the `id` field in /api/public/radio/stats.
-    let id: String
-    let name: String
-    let host: String
-    let streamURL: URL
-    let accentColor: Color
-}
-
-struct AndonTrack: Decodable, Equatable, Sendable {
-    let title: String?
-    let artist: String?
-    let online: Bool?
-    let error: String?
-
-    var displayTitle: String {
-        guard let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty
-        else { return "Unknown title" }
-        return trimmed
-    }
-
-    var displayArtist: String {
-        guard let trimmed = artist?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty
-        else { return "Unknown artist" }
-        return trimmed
-    }
-}
-
-struct AndonStationDetail: Decodable, Equatable, Sendable, Identifiable {
-    let id: String
-    let imageUrl: String?
-    let subtitle: String?
-    let primaryModel: String?
-    let ttsProvider: String?
-    let ttsModel: String?
-    let stats: Stats?
-    let currentBlock: Block?
-    let upcomingBlocks: [Block]?
-    let tweets: [Tweet]?
-    let contentStats: ContentStats?
-
-    var imageURL: URL? {
-        imageUrl.flatMap(URL.init(string:))
-    }
-
-    struct Stats: Decodable, Equatable, Sendable {
-        let currentListeners: Int?
-        let totalListeners: Int?
-        let popularity: Int?
-        let totalListenHours: Int?
-    }
-
-    struct Block: Decodable, Equatable, Sendable, Identifiable {
-        let name: String
-        let description: String?
-        let imageUrl: String?
-        let startedAt: Date
-        let durationMinutes: Int
-
-        var id: Date { startedAt }
-
-        /// Human-readable progress for a block relative to a clock time
-        /// (defaulted to now). Extracted from the view so it's unit-testable.
-        func progressText(relativeTo now: Date = Date()) -> String {
-            let elapsed = Int(now.timeIntervalSince(startedAt) / 60)
-            if elapsed < 0 {
-                let formatter = RelativeDateTimeFormatter()
-                formatter.unitsStyle = .short
-                return "starts \(formatter.localizedString(for: startedAt, relativeTo: now))"
-            }
-            if elapsed >= durationMinutes {
-                return "\(durationMinutes)m block ending"
-            }
-            return "\(elapsed)m / \(durationMinutes)m"
-        }
-    }
-
-    struct Tweet: Decodable, Equatable, Sendable, Identifiable {
-        let id: String
-        let content: String
-        let postedAt: Date
-        let tweetUrl: String
-        let isOwnTweet: Bool?
-        let author: Author
-
-        var tweetURL: URL? { URL(string: tweetUrl) }
-
-        struct Author: Decodable, Equatable, Sendable {
-            let username: String
-            let name: String
-        }
-
-        enum CodingKeys: String, CodingKey {
-            case id, content, author
-            case postedAt = "posted_at"
-            case tweetUrl = "tweet_url"
-            case isOwnTweet = "is_own_tweet"
-        }
-    }
-
-    struct ContentStats: Decodable, Equatable, Sendable {
-        let topSongsWeek: [Song]?
-        let topGenres: [Genre]?
-
-        struct Song: Decodable, Equatable, Sendable, Identifiable {
-            let name: String
-            let artist: String
-            let count: Int
-
-            var id: String { "\(name)|\(artist)" }
-        }
-
-        struct Genre: Decodable, Equatable, Sendable, Identifiable {
-            let name: String
-            let count: Int
-            let percentage: Int
-
-            var id: String { name }
-        }
-    }
-}
-
 @MainActor
 final class PlayerModel: ObservableObject {
     static let shared = PlayerModel()
@@ -283,11 +67,11 @@ final class PlayerModel: ObservableObject {
     private let metadataClient = MusicMetadataClient.shared
     private var metadataVersionCancellable: AnyCancellable?
     #endif
-    private let apiClient: RadioAPIClient
+    private let apiClient: RadioAPI
 
-    init() {
+    init(apiClient: RadioAPI = RadioAPIClient()) {
         currentStation = PlayerModel.stations[0]
-        apiClient = RadioAPIClient()
+        self.apiClient = apiClient
         configureAudioSession()
         configureRemoteCommands()
         observeMetadataEnrichment()
@@ -309,7 +93,8 @@ final class PlayerModel: ObservableObject {
         manualMetadataRefreshTask?.cancel()
         manualMetadataRefreshTask = nil
         stopPlayback()
-        apiClient.invalidateAndCancel()
+        // Session lifecycle stays out of the RadioAPI protocol — tests don't model it.
+        (apiClient as? RadioAPIClient)?.invalidateAndCancel()
     }
 
     func togglePlayback() {
@@ -492,7 +277,10 @@ final class PlayerModel: ObservableObject {
         playbackNotificationObservers = []
     }
 
-    private func performMetadataRefresh(force: Bool) async {
+    /// Internal (not private) so tests can drive a single refresh cycle deterministically
+    /// against an injected `RadioAPI` stub. The public `refreshAllMetadata` wraps this
+    /// in a Task for the production app.
+    func performMetadataRefresh(force: Bool) async {
         // Polling backs off if a refresh is in flight. Manual refreshes force
         // a fresh attempt — the user pressed something, they expect a fetch.
         if !force, isRefreshingMetadata { return }
@@ -518,9 +306,13 @@ final class PlayerModel: ObservableObject {
             }
             anySuccess = true
         } catch {
-            if isCancellation(error) { return }
-            lastError = "metadata: \(error.localizedDescription)"
-            NSLog("Andon Cone metadata refresh failed: %@", error.localizedDescription)
+            // Cancellation isn't a refresh failure — the call was aborted from outside
+            // (background, manual-refresh-while-polling). Suppress it so a sibling
+            // success still commits its timestamp below.
+            if !isCancellation(error) {
+                lastError = "metadata: \(error.localizedDescription)"
+                NSLog("Andon Cone metadata refresh failed: %@", error.localizedDescription)
+            }
         }
 
         do {
@@ -528,19 +320,21 @@ final class PlayerModel: ObservableObject {
             applyStats(response.stations)
             anySuccess = true
         } catch {
-            if isCancellation(error) { return }
-            lastError = "stats: \(error.localizedDescription)"
-            NSLog("Andon Cone stats refresh failed: %@", error.localizedDescription)
+            if !isCancellation(error) {
+                lastError = "stats: \(error.localizedDescription)"
+                NSLog("Andon Cone stats refresh failed: %@", error.localizedDescription)
+            }
         }
 
         if anySuccess {
             lastMetadataRefresh = Date()
             metadataErrorMessage = lastError
             updateNowPlayingInfo()
-        } else {
-            metadataErrorMessage = lastError ?? "Metadata refresh failed"
+        } else if let lastError {
+            metadataErrorMessage = lastError
             metadataIsStale = true
         }
+        // else: both calls were cancelled — leave user-visible state untouched.
     }
 
     private func applyStats(_ details: [AndonStationDetail]) {
@@ -552,11 +346,14 @@ final class PlayerModel: ObservableObject {
     }
 
     private func updateMetadataStaleness() {
-        guard let lastMetadataRefresh else {
-            metadataIsStale = true
-            return
-        }
-        metadataIsStale = Date().timeIntervalSince(lastMetadataRefresh) > 75
+        metadataIsStale = Self.isStale(lastRefresh: lastMetadataRefresh)
+    }
+
+    /// Metadata is considered stale once it's older than 75 seconds (~3.75 poll cycles).
+    /// `nil` lastRefresh is treated as stale.
+    static func isStale(lastRefresh: Date?, now: Date = Date()) -> Bool {
+        guard let lastRefresh else { return true }
+        return now.timeIntervalSince(lastRefresh) > 75
     }
 
     private func configureAudioSession() {
@@ -689,12 +486,4 @@ final class PlayerModel: ObservableObject {
         }
     }
     #endif
-}
-
-private struct MetadataResponse: Decodable {
-    let stations: [String: AndonTrack]
-}
-
-private struct StatsResponse: Decodable {
-    let stations: [AndonStationDetail]
 }

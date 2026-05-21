@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
@@ -28,17 +27,9 @@ final class ArtworkCache: ObservableObject {
     private let session: URLSession
 
     init() {
-        let fm = FileManager.default
-        let caches = (try? fm.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
-            ?? fm.temporaryDirectory
-        cacheDirectory = caches.appendingPathComponent("AndonCone/Artwork", isDirectory: true)
-        try? fm.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
-
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 30
-        config.waitsForConnectivity = true
-        session = URLSession(configuration: config)
+        cacheDirectory = CacheSupport.cacheDirectory(named: "Artwork")
+        // Longer timeouts than the metadata sessions — image bytes are bigger and slower.
+        session = CacheSupport.makePollingSession(requestTimeout: 15, resourceTimeout: 30)
     }
 
     /// Synchronous lookup. Returns the cached image if either the memory or disk store
@@ -90,8 +81,6 @@ final class ArtworkCache: ObservableObject {
     }
 
     private func cacheFile(for url: URL) -> URL {
-        let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
-        let name = digest.map { String(format: "%02x", $0) }.joined()
-        return cacheDirectory.appendingPathComponent(name)
+        cacheDirectory.appendingPathComponent(CacheSupport.cacheFilename(for: url.absoluteString))
     }
 }

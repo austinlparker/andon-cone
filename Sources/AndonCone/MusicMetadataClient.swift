@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 import SwiftUI
 
 /// Catalog-level metadata for a single track, enriched from the iTunes Search API.
@@ -33,6 +32,15 @@ struct EnrichedTrack: Codable, Equatable, Sendable, Identifiable {
         components.scheme = "music"
         return components.url ?? appleMusicURL
     }
+
+    /// "Album · 1972" when we know the year, otherwise just "Album". Shared between
+    /// the iOS and macOS hero layouts.
+    var albumDisplayText: String {
+        if let year = releaseYear {
+            return "\(albumTitle) · \(year)"
+        }
+        return albumTitle
+    }
 }
 
 /// Looks up `EnrichedTrack` info from the iTunes Search API.
@@ -59,23 +67,14 @@ final class MusicMetadataClient: ObservableObject {
     private let session: URLSession
 
     init() {
-        let fm = FileManager.default
-        let caches = (try? fm.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
-            ?? fm.temporaryDirectory
-        cacheDirectory = caches.appendingPathComponent("AndonCone/Tracks", isDirectory: true)
-        try? fm.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
-
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 20
-        config.waitsForConnectivity = true
-        session = URLSession(configuration: config)
+        cacheDirectory = CacheSupport.cacheDirectory(named: "Tracks")
+        session = CacheSupport.makePollingSession()
     }
 
     /// Synchronous read. Returns nil for both "looked up, no match" and "not yet looked up"
     /// — callers shouldn't care about the distinction.
     func enriched(for track: AndonTrack) -> EnrichedTrack? {
-        let key = cacheKey(for: track)
+        let key = Self.cacheKey(for: track)
         switch resolved(key: key) {
         case .match(let enriched): return enriched
         case .miss, .none: return nil
@@ -85,7 +84,7 @@ final class MusicMetadataClient: ObservableObject {
     /// Fire a background lookup if we don't already have a result (or one in flight).
     /// Safe to call as often as you like — it dedupes.
     func enrich(_ track: AndonTrack) {
-        let key = cacheKey(for: track)
+        let key = Self.cacheKey(for: track)
         if resolved(key: key) != nil { return }
         if inFlight.contains(key) { return }
 
@@ -117,12 +116,7 @@ final class MusicMetadataClient: ObservableObject {
             let (data, _) = try await session.data(from: url)
             let response = try Self.decoder.decode(iTunesSearchResponse.self, from: data)
 
-            // Require artist substring overlap to suppress obviously wrong matches
-            // (live, remix, cover versions sometimes return unrelated tracks).
-            let chosen = response.results.first { item in
-                item.artistName.localizedCaseInsensitiveContains(artist)
-                    || artist.localizedCaseInsensitiveContains(item.artistName)
-            }
+            let chosen = Self.bestMatch(in: response.results, matchingArtist: artist)
 
             let entry: CacheEntry
             if let item = chosen {
@@ -148,9 +142,19 @@ final class MusicMetadataClient: ObservableObject {
         }
     }
 
-    private func cacheKey(for track: AndonTrack) -> String {
+    nonisolated static func cacheKey(for track: AndonTrack) -> String {
         // Lowercase so capitalization wobbles between metadata refreshes don't fork the cache.
         "\(track.displayArtist.lowercased())|\(track.displayTitle.lowercased())"
+    }
+
+    /// Picks the first iTunes result whose artist overlaps the query artist as a
+    /// case-insensitive substring in either direction. Suppresses obviously wrong
+    /// matches (live, remix, cover versions sometimes return unrelated tracks).
+    nonisolated static func bestMatch(in results: [iTunesSong], matchingArtist artist: String) -> iTunesSong? {
+        results.first { item in
+            item.artistName.localizedCaseInsensitiveContains(artist)
+                || artist.localizedCaseInsensitiveContains(item.artistName)
+        }
     }
 
     private static func makeSearchURL(artist: String, title: String) -> URL {
@@ -164,9 +168,7 @@ final class MusicMetadataClient: ObservableObject {
     }
 
     private func diskPath(for key: String) -> URL {
-        let digest = SHA256.hash(data: Data(key.utf8))
-        let name = digest.map { String(format: "%02x", $0) }.joined()
-        return cacheDirectory.appendingPathComponent("\(name).json")
+        cacheDirectory.appendingPathComponent("\(CacheSupport.cacheFilename(for: key)).json")
     }
 
     private func loadFromDisk(key: String) -> CacheEntry? {
@@ -184,12 +186,12 @@ final class MusicMetadataClient: ObservableObject {
     private static let encoder = JSONEncoder()
 }
 
-private struct iTunesSearchResponse: Decodable {
+struct iTunesSearchResponse: Decodable {
     let resultCount: Int
     let results: [iTunesSong]
 }
 
-private struct iTunesSong: Decodable {
+struct iTunesSong: Decodable {
     let trackId: Int
     let trackName: String
     let artistName: String

@@ -30,10 +30,12 @@ struct AndonConeApp: App {
                 .environmentObject(metadata)
                 .environmentObject(library)
                 .task {
-                    model.start()
+                    if !ProcessInfo.processInfo.isXcodePreview {
+                        model.start()
+                    }
                 }
-                .onChange(of: scenePhase) { newPhase in
-                    if newPhase == .active {
+                .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .active, !ProcessInfo.processInfo.isXcodePreview {
                         model.refreshAllMetadata()
                     }
                 }
@@ -50,6 +52,8 @@ struct AndonConeApp: App {
 }
 
 private func configureCrashReporting() {
+    guard !ProcessInfo.processInfo.isXcodePreview else { return }
+
     #if os(iOS)
     let options = Embrace.Options(appId: "7fxwh")
 

@@ -14,8 +14,10 @@ struct StationSourceList: View {
                 selectedStationID = stationID
 
                 if let stationID, let station = model.station(id: stationID) {
-                    model.selectStation(station)
-                    onSelectStation()
+                    Task { @MainActor in
+                        model.selectStation(station)
+                        onSelectStation()
+                    }
                 }
             }
         )
@@ -52,10 +54,12 @@ struct StationSourceList: View {
                 }
 
                 #if DEBUG && os(iOS)
-                Button(role: .destructive) {
-                    fatalError("Intentional Embrace crash test")
-                } label: {
-                    Label("Crash Test", systemImage: "exclamationmark.triangle")
+                if !ProcessInfo.processInfo.isXcodePreview {
+                    Button(role: .destructive) {
+                        fatalError("Intentional Embrace crash test")
+                    } label: {
+                        Label("Crash Test", systemImage: "exclamationmark.triangle")
+                    }
                 }
                 #endif
             }
@@ -70,21 +74,50 @@ struct StationSourceRow: View {
     let station: Station
     let detail: AndonStationDetail?
     let track: AndonTrack?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(spacing: 10) {
-            StationArtwork(url: detail?.imageURL, size: 34)
+        HStack(alignment: .top, spacing: 10) {
+            StationArtwork(url: detail?.imageURL, size: dynamicTypeSize.isAccessibilitySize ? 44 : 34)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(station.name)
                     .font(.callout)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                 Text(track?.displayTitle ?? station.host)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+#Preview("Sidebar") {
+    SidebarPreviewHost()
+}
+
+#Preview("Sidebar Accessibility") {
+    SidebarPreviewHost()
+        .dynamicTypeSize(.accessibility3)
+}
+
+private struct SidebarPreviewHost: View {
+    @StateObject private var model = PlayerModel.preview
+    @StateObject private var appChrome = AppChromeModel()
+    @StateObject private var artworkCache = ArtworkCache()
+    @State private var selectedStationID: Station.ID? = PlayerModel.stations[0].id
+
+    var body: some View {
+        NavigationStack {
+            StationSourceList(
+                selectedStationID: $selectedStationID,
+                onSelectStation: {}
+            )
+        }
+        .environmentObject(model)
+        .environmentObject(appChrome)
+        .environmentObject(artworkCache)
     }
 }

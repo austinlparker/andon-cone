@@ -10,9 +10,10 @@ enum DetailTab: String, CaseIterable, Identifiable {
 
 struct SchedulePanel: View {
     @EnvironmentObject private var model: PlayerModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 16 : 12) {
             if let block = model.currentDetail?.currentBlock {
                 BlockRow(title: "On now", block: block)
             } else {
@@ -41,28 +42,7 @@ struct TopTracksPanel: View {
                 EmptyState(text: "No top tracks yet", systemImage: "music.note.list")
             } else {
                 ForEach(Array(songs.prefix(8).enumerated()), id: \.element.id) { index, song in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text("\(index + 1)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.tertiary)
-                            .frame(width: 22, alignment: .trailing)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(song.name)
-                                .font(.callout.weight(.semibold))
-                                .lineLimit(1)
-                            Text(song.artist)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-
-                        Spacer()
-
-                        Text("\(song.count)x")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    TopTrackRow(rank: index + 1, song: song)
                 }
             }
         }
@@ -70,9 +50,76 @@ struct TopTracksPanel: View {
     }
 }
 
+private struct TopTrackRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let rank: Int
+    let song: AndonStationDetail.ContentStats.Song
+
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    rankText
+                    Spacer(minLength: 12)
+                    countText
+                }
+
+                trackText
+                artistText
+            }
+            .padding(.vertical, 4)
+            .accessibilityElement(children: .combine)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                rankText
+                    .frame(width: 22, alignment: .trailing)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    trackText
+                    artistText
+                }
+
+                Spacer()
+
+                countText
+            }
+        }
+    }
+
+    private var rankText: some View {
+        Text("\(rank)")
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.tertiary)
+    }
+
+    private var trackText: some View {
+        Text(song.name)
+            .font(.callout.weight(.semibold))
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var artistText: some View {
+        Text(song.artist)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var countText: some View {
+        Text("\(song.count)x")
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+    }
+}
+
 struct BuzzPanel: View {
     @EnvironmentObject private var model: PlayerModel
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         let tweets = model.currentDetail?.tweets ?? []
@@ -87,26 +134,17 @@ struct BuzzPanel: View {
                         }
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 5) {
-                                if tweet.isOwnTweet == true {
-                                    Image(systemName: "checkmark.seal.fill")
-                                        .foregroundStyle(.tint)
-                                }
-                                Text("@\(tweet.author.username)")
-                                    .font(.caption.weight(.semibold))
-                                Text(relativeText(for: tweet.postedAt))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                            buzzHeader(for: tweet)
 
                             Text(tweet.content)
                                 .font(.caption)
                                 .foregroundStyle(.primary)
-                                .lineLimit(4)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 8 : 4)
                                 .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
+                        .padding(dynamicTypeSize.isAccessibilitySize ? 12 : 10)
                         // Plain tinted fill rather than .thinMaterial — the surrounding panel is
                         // already material, and material-on-material reads flat.
                         .background(Color.primary.opacity(0.04),
@@ -122,50 +160,127 @@ struct BuzzPanel: View {
         }
         .panelStyle()
     }
+
+    @ViewBuilder
+    private func buzzHeader(for tweet: AndonStationDetail.Tweet) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 2) {
+                authorLabel(for: tweet)
+
+                Text(relativeText(for: tweet.postedAt))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        } else {
+            HStack(spacing: 5) {
+                authorLabel(for: tweet)
+
+                Text(relativeText(for: tweet.postedAt))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func authorLabel(for tweet: AndonStationDetail.Tweet) -> some View {
+        HStack(spacing: 5) {
+            if tweet.isOwnTweet == true {
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
+            }
+
+            Text("@\(tweet.author.username)")
+                .font(.caption.weight(.semibold))
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 }
 
 struct BlockRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let title: String
     let block: AndonStationDetail.Block
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Label(title, systemImage: "waveform.circle.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(block.progressText())
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
+        VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 6 : 4) {
+            header
 
             Text(block.name)
                 .font(.headline)
-                .lineLimit(1)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+                .fixedSize(horizontal: false, vertical: true)
 
             if let description = block.description, !description.isEmpty {
                 Text(description)
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .lineLimit(3)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 6 : 3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 4 : 0)
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var header: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 2) {
+                titleLabel
+                progressText
+            }
+        } else {
+            HStack {
+                titleLabel
+                Spacer()
+                progressText
+            }
+        }
+    }
+
+    private var titleLabel: some View {
+        Label(title, systemImage: "waveform.circle.fill")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+    }
+
+    private var progressText: some View {
+        Text(block.progressText())
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
     }
 }
 
 struct GlassSegmentedPicker: View {
     @EnvironmentObject private var model: PlayerModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var selection: DetailTab
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(DetailTab.allCases) { tab in
-                tabButton(for: tab)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 6) {
+                    ForEach(DetailTab.allCases) { tab in
+                        tabButton(for: tab)
+                    }
+                }
+                .padding(6)
+                .appGlass(in: RoundedRectangle(cornerRadius: 18, style: .continuous), interactive: true)
+            } else {
+                HStack(spacing: 4) {
+                    ForEach(DetailTab.allCases) { tab in
+                        tabButton(for: tab)
+                    }
+                }
+                .padding(5)
+                .appGlass(in: Capsule(), interactive: true)
             }
         }
-        .padding(5)
-        .appGlass(in: Capsule(), interactive: true)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Details")
     }
@@ -177,17 +292,30 @@ struct GlassSegmentedPicker: View {
             Text(tab.rawValue)
                 .font(.callout.weight(selection == tab ? .semibold : .regular))
                 .foregroundStyle(selection == tab ? .primary : .secondary)
-                .frame(maxWidth: .infinity)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 44 : 0)
                 .padding(.vertical, 10)
                 .background(
-                    Capsule().fill(
-                        selection == tab
-                            ? model.currentStation.accentColor.opacity(0.22)
-                            : Color.clear
-                    )
+                    selectedBackground(for: tab)
                 )
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selection == tab ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private func selectedBackground(for tab: DetailTab) -> some View {
+        let fill = selection == tab
+            ? model.currentStation.accentColor.opacity(0.22)
+            : Color.clear
+
+        if dynamicTypeSize.isAccessibilitySize {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(fill)
+        } else {
+            Capsule()
+                .fill(fill)
+        }
     }
 }

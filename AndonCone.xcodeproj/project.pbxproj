@@ -27,26 +27,47 @@
 		100000000000000000000123 /* MusicLibraryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000008 /* MusicLibraryService.swift */; };
 		100000000000000000000124 /* MusicLibraryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000008 /* MusicLibraryService.swift */; };
 		100000000000000000000131 /* TextFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000031 /* TextFormatting.swift */; };
-		100000000000000000000231 /* TextFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000031 /* TextFormatting.swift */; };
 		100000000000000000000132 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000032 /* Theme.swift */; };
-		100000000000000000000232 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000032 /* Theme.swift */; };
 		100000000000000000000133 /* Artwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000033 /* Artwork.swift */; };
-		100000000000000000000233 /* Artwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000033 /* Artwork.swift */; };
 		100000000000000000000134 /* DetailPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000034 /* DetailPanels.swift */; };
-		100000000000000000000234 /* DetailPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000034 /* DetailPanels.swift */; };
 		100000000000000000000135 /* NowPlaying.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000035 /* NowPlaying.swift */; };
-		100000000000000000000235 /* NowPlaying.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000035 /* NowPlaying.swift */; };
 		100000000000000000000136 /* Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000036 /* Sidebar.swift */; };
-		100000000000000000000236 /* Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000036 /* Sidebar.swift */; };
 		100000000000000000000137 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000037 /* AboutView.swift */; };
-		100000000000000000000237 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000037 /* AboutView.swift */; };
 		100000000000000000000138 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000038 /* Models.swift */; };
-		100000000000000000000238 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000038 /* Models.swift */; };
 		100000000000000000000139 /* RadioAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000039 /* RadioAPIClient.swift */; };
-		100000000000000000000239 /* RadioAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000039 /* RadioAPIClient.swift */; };
 		100000000000000000000140 /* CacheSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000040 /* CacheSupport.swift */; };
+		100000000000000000000231 /* TextFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000031 /* TextFormatting.swift */; };
+		100000000000000000000232 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000032 /* Theme.swift */; };
+		100000000000000000000233 /* Artwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000033 /* Artwork.swift */; };
+		100000000000000000000234 /* DetailPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000034 /* DetailPanels.swift */; };
+		100000000000000000000235 /* NowPlaying.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000035 /* NowPlaying.swift */; };
+		100000000000000000000236 /* Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000036 /* Sidebar.swift */; };
+		100000000000000000000237 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000037 /* AboutView.swift */; };
+		100000000000000000000238 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000038 /* Models.swift */; };
+		100000000000000000000239 /* RadioAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000039 /* RadioAPIClient.swift */; };
 		100000000000000000000240 /* CacheSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000040 /* CacheSupport.swift */; };
+		100000000000000000010101 /* AndonTrackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000010001 /* AndonTrackTests.swift */; };
+		100000000000000000010102 /* BlockProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000010002 /* BlockProgressTests.swift */; };
+		100000000000000000010103 /* CacheSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000010003 /* CacheSupportTests.swift */; };
+		100000000000000000010104 /* EnrichedTrackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000010004 /* EnrichedTrackTests.swift */; };
+		100000000000000000010105 /* MetadataDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000010005 /* MetadataDecodingTests.swift */; };
+		100000000000000000010106 /* MusicLibraryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000010006 /* MusicLibraryServiceTests.swift */; };
+		100000000000000000010107 /* MusicMetadataClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000010007 /* MusicMetadataClientTests.swift */; };
+		100000000000000000010108 /* PlayerModelRefreshTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000010008 /* PlayerModelRefreshTests.swift */; };
+		100000000000000000010109 /* PlayerModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000010009 /* PlayerModelTests.swift */; };
+		100000000000000000010110 /* RelativeTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000010010 /* RelativeTextTests.swift */; };
+		100000000000000000010111 /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000010011 /* TestHelpers.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		100000000000000000010701 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 100000000000000000000801 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 100000000000000000000402;
+			remoteInfo = "Andon Cone macOS";
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		100000000000000000000001 /* AndonConeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AndonConeApp.swift; sourceTree = "<group>"; };
@@ -57,6 +78,12 @@
 		100000000000000000000006 /* ArtworkCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkCache.swift; sourceTree = "<group>"; };
 		100000000000000000000007 /* MusicMetadataClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicMetadataClient.swift; sourceTree = "<group>"; };
 		100000000000000000000008 /* MusicLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibraryService.swift; sourceTree = "<group>"; };
+		100000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		100000000000000000000012 /* AndonCone.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AndonCone.entitlements; sourceTree = "<group>"; };
+		100000000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		100000000000000000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		100000000000000000000021 /* Andon Cone.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Andon Cone.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		100000000000000000000022 /* Andon Cone.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Andon Cone.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		100000000000000000000031 /* TextFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextFormatting.swift; sourceTree = "<group>"; };
 		100000000000000000000032 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		100000000000000000000033 /* Artwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Artwork.swift; sourceTree = "<group>"; };
@@ -67,12 +94,18 @@
 		100000000000000000000038 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		100000000000000000000039 /* RadioAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RadioAPIClient.swift; sourceTree = "<group>"; };
 		100000000000000000000040 /* CacheSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSupport.swift; sourceTree = "<group>"; };
-		100000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		100000000000000000000012 /* AndonCone.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AndonCone.entitlements; sourceTree = "<group>"; };
-		100000000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		100000000000000000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		100000000000000000000021 /* Andon Cone.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Andon Cone.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		100000000000000000000022 /* Andon Cone.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Andon Cone.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		100000000000000000010001 /* AndonTrackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AndonTrackTests.swift; sourceTree = "<group>"; };
+		100000000000000000010002 /* BlockProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockProgressTests.swift; sourceTree = "<group>"; };
+		100000000000000000010003 /* CacheSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSupportTests.swift; sourceTree = "<group>"; };
+		100000000000000000010004 /* EnrichedTrackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrichedTrackTests.swift; sourceTree = "<group>"; };
+		100000000000000000010005 /* MetadataDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataDecodingTests.swift; sourceTree = "<group>"; };
+		100000000000000000010006 /* MusicLibraryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibraryServiceTests.swift; sourceTree = "<group>"; };
+		100000000000000000010007 /* MusicMetadataClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicMetadataClientTests.swift; sourceTree = "<group>"; };
+		100000000000000000010008 /* PlayerModelRefreshTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerModelRefreshTests.swift; sourceTree = "<group>"; };
+		100000000000000000010009 /* PlayerModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerModelTests.swift; sourceTree = "<group>"; };
+		100000000000000000010010 /* RelativeTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelativeTextTests.swift; sourceTree = "<group>"; };
+		100000000000000000010011 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
+		100000000000000000010021 /* AndonConeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AndonConeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -91,6 +124,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		100000000000000000010201 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -98,6 +138,7 @@
 			isa = PBXGroup;
 			children = (
 				100000000000000000000302 /* Sources/AndonCone */,
+				100000000000000000010307 /* Tests/AndonConeTests */,
 				100000000000000000000014 /* Assets.xcassets */,
 				100000000000000000000303 /* Config */,
 				100000000000000000000304 /* Products */,
@@ -143,6 +184,7 @@
 			children = (
 				100000000000000000000021 /* Andon Cone.app */,
 				100000000000000000000022 /* Andon Cone.app */,
+				100000000000000000010021 /* AndonConeTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -162,6 +204,24 @@
 				100000000000000000000013 /* Info.plist */,
 			);
 			path = macOS;
+			sourceTree = "<group>";
+		};
+		100000000000000000010307 /* Tests/AndonConeTests */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000010001 /* AndonTrackTests.swift */,
+				100000000000000000010002 /* BlockProgressTests.swift */,
+				100000000000000000010003 /* CacheSupportTests.swift */,
+				100000000000000000010004 /* EnrichedTrackTests.swift */,
+				100000000000000000010005 /* MetadataDecodingTests.swift */,
+				100000000000000000010006 /* MusicLibraryServiceTests.swift */,
+				100000000000000000010007 /* MusicMetadataClientTests.swift */,
+				100000000000000000010008 /* PlayerModelRefreshTests.swift */,
+				100000000000000000010009 /* PlayerModelTests.swift */,
+				100000000000000000010010 /* RelativeTextTests.swift */,
+				100000000000000000010011 /* TestHelpers.swift */,
+			);
+			path = Tests/AndonConeTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -204,6 +264,23 @@
 			productReference = 100000000000000000000022 /* Andon Cone.app */;
 			productType = "com.apple.product-type.application";
 		};
+		100000000000000000010403 /* AndonConeTests macOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 100000000000000000010503 /* Build configuration list for PBXNativeTarget "AndonConeTests macOS" */;
+			buildPhases = (
+				100000000000000000010603 /* Sources */,
+				100000000000000000010201 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				100000000000000000010702 /* PBXTargetDependency */,
+			);
+			name = "AndonConeTests macOS";
+			productName = AndonConeTests;
+			productReference = 100000000000000000010021 /* AndonConeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -230,6 +307,10 @@
 							};
 						};
 					};
+					100000000000000000010403 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = 100000000000000000000402;
+					};
 				};
 			};
 			buildConfigurationList = 100000000000000000000500 /* Build configuration list for PBXProject "AndonCone" */;
@@ -250,6 +331,7 @@
 			targets = (
 				100000000000000000000401 /* Andon Cone iOS */,
 				100000000000000000000402 /* Andon Cone macOS */,
+				100000000000000000010403 /* AndonConeTests macOS */,
 			);
 		};
 /* End PBXProject section */
@@ -324,7 +406,33 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		100000000000000000010603 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				100000000000000000010101 /* AndonTrackTests.swift in Sources */,
+				100000000000000000010102 /* BlockProgressTests.swift in Sources */,
+				100000000000000000010103 /* CacheSupportTests.swift in Sources */,
+				100000000000000000010104 /* EnrichedTrackTests.swift in Sources */,
+				100000000000000000010105 /* MetadataDecodingTests.swift in Sources */,
+				100000000000000000010106 /* MusicLibraryServiceTests.swift in Sources */,
+				100000000000000000010107 /* MusicMetadataClientTests.swift in Sources */,
+				100000000000000000010108 /* PlayerModelRefreshTests.swift in Sources */,
+				100000000000000000010109 /* PlayerModelTests.swift in Sources */,
+				100000000000000000010110 /* RelativeTextTests.swift in Sources */,
+				100000000000000000010111 /* TestHelpers.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		100000000000000000010702 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 100000000000000000000402 /* Andon Cone macOS */;
+			targetProxy = 100000000000000000010701 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		100000000000000000000901 /* Debug */ = {
@@ -441,15 +549,19 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Config/iOS/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = io.aparker.andoncone;
+				PRODUCT_MODULE_NAME = AndonCone;
 				PRODUCT_NAME = "Andon Cone";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -465,15 +577,19 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Config/iOS/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = io.aparker.andoncone;
+				PRODUCT_MODULE_NAME = AndonCone;
 				PRODUCT_NAME = "Andon Cone";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -483,10 +599,18 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = Config/macOS/AndonCone.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = A45Q5DN8BF;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Config/macOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Andon Cone";
@@ -495,9 +619,16 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.aparker.andoncone;
+				PRODUCT_MODULE_NAME = AndonCone;
 				PRODUCT_NAME = "Andon Cone";
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SDKROOT = macosx;
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_VERSION = 6.0;
@@ -508,10 +639,18 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = Config/macOS/AndonCone.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = A45Q5DN8BF;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Config/macOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Andon Cone";
@@ -520,12 +659,67 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.aparker.andoncone;
+				PRODUCT_MODULE_NAME = AndonCone;
 				PRODUCT_NAME = "Andon Cone";
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SDKROOT = macosx;
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		100000000000000000010931 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = A45Q5DN8BF;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.aparker.andoncone.tests;
+				PRODUCT_MODULE_NAME = AndonConeTests;
+				PRODUCT_NAME = AndonConeTests;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Andon Cone.app/Contents/MacOS/Andon Cone";
+			};
+			name = Debug;
+		};
+		100000000000000000010932 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = A45Q5DN8BF;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.aparker.andoncone.tests;
+				PRODUCT_MODULE_NAME = AndonConeTests;
+				PRODUCT_NAME = AndonConeTests;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Andon Cone.app/Contents/MacOS/Andon Cone";
 			};
 			name = Release;
 		};
@@ -555,6 +749,15 @@
 			buildConfigurations = (
 				100000000000000000000921 /* Debug */,
 				100000000000000000000922 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		100000000000000000010503 /* Build configuration list for PBXNativeTarget "AndonConeTests macOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				100000000000000000010931 /* Debug */,
+				100000000000000000010932 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

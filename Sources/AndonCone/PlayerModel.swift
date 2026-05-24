@@ -68,13 +68,18 @@ final class PlayerModel: ObservableObject {
     private var metadataVersionCancellable: AnyCancellable?
     #endif
     private let apiClient: RadioAPI
+    private let performsExternalEffects: Bool
 
-    init(apiClient: RadioAPI = RadioAPIClient()) {
+    init(apiClient: RadioAPI = RadioAPIClient(), performsExternalEffects: Bool = true) {
         currentStation = PlayerModel.stations[0]
         self.apiClient = apiClient
-        configureAudioSession()
-        configureRemoteCommands()
-        observeMetadataEnrichment()
+        self.performsExternalEffects = performsExternalEffects
+
+        if performsExternalEffects {
+            configureAudioSession()
+            configureRemoteCommands()
+            observeMetadataEnrichment()
+        }
     }
 
     func start() {
@@ -194,6 +199,13 @@ final class PlayerModel: ObservableObject {
     }
 
     private func startPlayback(for station: Station) {
+        guard performsExternalEffects else {
+            isPlaying = true
+            isBuffering = false
+            updateNowPlayingInfo()
+            return
+        }
+
         // Tear the outgoing player down explicitly. ARC alone can leave a brief
         // window where the previous stream keeps feeding audio if anything
         // transient (a pending notification, an in-flight load) retains it.
@@ -223,18 +235,20 @@ final class PlayerModel: ObservableObject {
     }
 
     private func observe(player: AVPlayer, item: AVPlayerItem) {
-        playerItemStatusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+        playerItemStatusObservation = item.observe(\.status, options: [.new]) { [weak self, weak player] item, _ in
             guard item.status == .failed else { return }
             Task { @MainActor [weak self] in
-                self?.handlePlaybackFailure()
+                guard let self, self.player === player else { return }
+                self.handlePlaybackFailure()
             }
         }
 
-        playerTimeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+        playerTimeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self, weak player] observedPlayer, _ in
             // KVO can fire off-main; capture the status and hop back to main for state mutation.
-            let waiting = (player.timeControlStatus == .waitingToPlayAtSpecifiedRate)
+            let waiting = (observedPlayer.timeControlStatus == .waitingToPlayAtSpecifiedRate)
             Task { @MainActor [weak self] in
-                self?.isBuffering = waiting
+                guard let self, self.player === player else { return }
+                self.isBuffering = waiting
             }
         }
 
@@ -243,18 +257,20 @@ final class PlayerModel: ObservableObject {
             forName: AVPlayerItem.playbackStalledNotification,
             object: item,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self, weak player] _ in
             Task { @MainActor [weak self] in
-                self?.isBuffering = true
+                guard let self, self.player === player else { return }
+                self.isBuffering = true
             }
         }
         let failureObserver = center.addObserver(
             forName: AVPlayerItem.failedToPlayToEndTimeNotification,
             object: item,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self, weak player] _ in
             Task { @MainActor [weak self] in
-                self?.handlePlaybackFailure()
+                guard let self, self.player === player else { return }
+                self.handlePlaybackFailure()
             }
         }
         playbackNotificationObservers = [stallObserver, failureObserver]
@@ -281,9 +297,9 @@ final class PlayerModel: ObservableObject {
     /// against an injected `RadioAPI` stub. The public `refreshAllMetadata` wraps this
     /// in a Task for the production app.
     func performMetadataRefresh(force: Bool) async {
-        // Polling backs off if a refresh is in flight. Manual refreshes force
-        // a fresh attempt — the user pressed something, they expect a fetch.
-        if !force, isRefreshingMetadata { return }
+        // Keep refreshes serialized so scene-activation and polling cannot race
+        // each other into duplicate network calls and interleaved published state.
+        if isRefreshingMetadata { return }
 
         isRefreshingMetadata = true
         defer {
@@ -301,9 +317,11 @@ final class PlayerModel: ObservableObject {
             let response = try await metadataTask
             // Merge so a station temporarily missing from the response
             // doesn't blink out of the UI.
+            var dict = tracksByID
             for (id, track) in response.stations {
-                tracksByID[id] = track
+                dict[id] = track
             }
+            tracksByID = dict
             anySuccess = true
         } catch {
             // Cancellation isn't a refresh failure — the call was aborted from outside
@@ -410,6 +428,8 @@ final class PlayerModel: ObservableObject {
 
     private func updateNowPlayingInfo() {
         #if os(iOS)
+        guard performsExternalEffects else { return }
+
         let track = currentTrack
         let enriched = enrichedCurrentTrack(for: track)
         var info: [String: Any] = [
@@ -484,6 +504,118 @@ final class PlayerModel: ObservableObject {
                 NSLog("Andon Cone artwork load failed: %@", error.localizedDescription)
             }
         }
+    }
+    #endif
+}
+
+extension PlayerModel {
+    static var preview: PlayerModel {
+        let model = PlayerModel(apiClient: PreviewRadioAPI(), performsExternalEffects: false)
+        model.applyPreviewData()
+        return model
+    }
+
+    private func applyPreviewData() {
+        let now = Date()
+        let tracks: [AndonTrack] = [
+            AndonTrack(title: "Midnight Cache Warmup", artist: "The Async Letdowns", online: true, error: nil),
+            AndonTrack(title: "Glass Effect Overdrive", artist: "Selector Set", online: true, error: nil),
+            AndonTrack(title: "No Manual Refresh", artist: "Silent Poller", online: true, error: nil),
+            AndonTrack(title: "Backpressure Ballad", artist: "Main Actor Trio", online: true, error: nil),
+        ]
+
+        tracksByID = Dictionary(uniqueKeysWithValues: zip(Self.stations.map(\.id), tracks))
+        detailsByID = Dictionary(uniqueKeysWithValues: Self.stations.enumerated().map { index, station in
+            (station.id, Self.previewDetail(for: station, index: index, now: now))
+        })
+        lastMetadataRefresh = now
+        metadataIsStale = false
+        metadataErrorMessage = nil
+    }
+
+    private static func previewDetail(for station: Station, index: Int, now: Date) -> AndonStationDetail {
+        AndonStationDetail(
+            id: station.id,
+            imageUrl: nil,
+            subtitle: "Preview station",
+            primaryModel: station.host,
+            ttsProvider: "Andon Preview",
+            ttsModel: station.host,
+            stats: AndonStationDetail.Stats(
+                currentListeners: 28 + (index * 7),
+                totalListeners: 1280 + (index * 245),
+                popularity: 70 + index,
+                totalListenHours: 560 + (index * 90)
+            ),
+            currentBlock: AndonStationDetail.Block(
+                name: station.name,
+                description: "A live preview block with enough metadata to exercise the production layout.",
+                imageUrl: nil,
+                startedAt: now.addingTimeInterval(-18 * 60),
+                durationMinutes: 60
+            ),
+            upcomingBlocks: [
+                AndonStationDetail.Block(
+                    name: "Signal Check",
+                    description: "Fresh station IDs, schedules, and listener stats roll forward.",
+                    imageUrl: nil,
+                    startedAt: now.addingTimeInterval(42 * 60),
+                    durationMinutes: 45
+                ),
+                AndonStationDetail.Block(
+                    name: "Late Rotation",
+                    description: "Deep cuts and metadata enrichment for the next listening window.",
+                    imageUrl: nil,
+                    startedAt: now.addingTimeInterval(87 * 60),
+                    durationMinutes: 60
+                ),
+            ],
+            tweets: [
+                AndonStationDetail.Tweet(
+                    id: "\(station.id)-tweet-1",
+                    content: "Preview metadata landed cleanly across the app shell.",
+                    postedAt: now.addingTimeInterval(-14 * 60),
+                    tweetUrl: "https://andonlabs.com/radio",
+                    isOwnTweet: true,
+                    author: AndonStationDetail.Tweet.Author(username: "andonfm", name: "Andon FM")
+                ),
+                AndonStationDetail.Tweet(
+                    id: "\(station.id)-tweet-2",
+                    content: "The current station keeps playing while the detail panels stay warm.",
+                    postedAt: now.addingTimeInterval(-48 * 60),
+                    tweetUrl: "https://andonlabs.com/radio",
+                    isOwnTweet: false,
+                    author: AndonStationDetail.Tweet.Author(username: "listener", name: "Listener")
+                ),
+            ],
+            contentStats: AndonStationDetail.ContentStats(
+                topSongsWeek: [
+                    AndonStationDetail.ContentStats.Song(name: "Midnight Cache Warmup", artist: "The Async Letdowns", count: 18),
+                    AndonStationDetail.ContentStats.Song(name: "Glass Effect Overdrive", artist: "Selector Set", count: 14),
+                    AndonStationDetail.ContentStats.Song(name: "No Manual Refresh", artist: "Silent Poller", count: 11),
+                    AndonStationDetail.ContentStats.Song(name: "Backpressure Ballad", artist: "Main Actor Trio", count: 9),
+                ],
+                topGenres: [
+                    AndonStationDetail.ContentStats.Genre(name: "Ambient", count: 28, percentage: 42),
+                    AndonStationDetail.ContentStats.Genre(name: "Indie", count: 18, percentage: 27),
+                ]
+            )
+        )
+    }
+}
+
+private struct PreviewRadioAPI: RadioAPI {
+    func fetchMetadata() async throws -> MetadataResponse {
+        MetadataResponse(stations: [:])
+    }
+
+    func fetchStats() async throws -> StatsResponse {
+        StatsResponse(stations: [])
+    }
+
+    #if os(iOS)
+    func fetchArtwork(from url: URL) async throws -> NowPlayingArtwork {
+        throw URLError(.resourceUnavailable)
     }
     #endif
 }

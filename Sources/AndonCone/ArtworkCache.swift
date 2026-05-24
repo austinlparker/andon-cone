@@ -49,8 +49,14 @@ final class ArtworkCache: ObservableObject {
         guard images[url] == nil, !loadingURLs.contains(url) else { return }
 
         if let disk = loadFromDisk(url) {
-            images[url] = disk
-            version &+= 1
+            loadingURLs.insert(url)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.loadingURLs.remove(url)
+                guard self.images[url] == nil else { return }
+                self.images[url] = disk
+                self.version &+= 1
+            }
             return
         }
 

@@ -39,33 +39,42 @@ struct RadioAppView: View {
             AboutView(store: tipStore)
         }
         .task {
-            await tipStore.loadProducts()
+            if !ProcessInfo.processInfo.isXcodePreview {
+                await tipStore.loadProducts()
+            }
         }
-        .onChange(of: model.currentStation.id) { stationID in
+        .onChange(of: model.currentStation.id) { _, stationID in
             selectedStationID = stationID
         }
-        .onChange(of: model.detailsByID) { details in
+        .onChange(of: model.detailsByID) { _, details in
             // Prefetch every station's artwork as soon as we know the URLs so switching
             // stations becomes an instant memory-cache hit, no network round trip.
-            for detail in details.values {
-                if let url = detail.imageURL {
+            let urls = details.values.compactMap(\.imageURL)
+            Task { @MainActor in
+                for url in urls {
                     artworkCache.prefetch(url)
                 }
             }
         }
-        .onChange(of: model.tracksByID) { tracks in
+        .onChange(of: model.tracksByID) { _, tracks in
             // Enrich every station's track in the background so a station switch shows
             // album art / metadata immediately. Lookups dedupe internally.
-            for track in tracks.values {
-                metadata.enrich(track)
+            let tracks = Array(tracks.values)
+            Task { @MainActor in
+                for track in tracks {
+                    metadata.enrich(track)
+                }
             }
         }
-        .onChange(of: metadata.version) { _ in
+        .onChange(of: metadata.version) {
             // Whenever an enriched track lands, kick the artwork cache so the high-res
             // album art is hot by the time the view next reads it.
-            for track in model.tracksByID.values {
-                if let enriched = metadata.enriched(for: track), let url = enriched.artworkURL {
-                    artworkCache.prefetch(url)
+            let tracks = Array(model.tracksByID.values)
+            Task { @MainActor in
+                for track in tracks {
+                    if let enriched = metadata.enriched(for: track), let url = enriched.artworkURL {
+                        artworkCache.prefetch(url)
+                    }
                 }
             }
         }
@@ -143,5 +152,20 @@ private struct StationDetailView<TabPicker: View, TabContent: View>: View {
         #if os(iOS)
         .toolbarBackground(.hidden, for: .navigationBar)
         #endif
+    }
+}
+
+#Preview {
+    RadioAppView()
+        .environmentObject(PlayerModel.preview)
+        .environmentObject(AppChromeModel())
+        .environmentObject(ArtworkCache())
+        .environmentObject(MusicMetadataClient())
+        .environmentObject(MusicLibraryService())
+}
+
+extension ProcessInfo {
+    var isXcodePreview: Bool {
+        environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
     }
 }

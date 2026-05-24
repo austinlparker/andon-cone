@@ -10,6 +10,7 @@ import UIKit
 struct AlbumLinkView: View {
     let enriched: EnrichedTrack?
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         if let enriched {
@@ -19,7 +20,7 @@ struct AlbumLinkView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text(enriched.albumDisplayText)
-                            .lineLimit(1)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
                         Image(systemName: "arrow.up.right")
                             .font(.caption2.weight(.semibold))
                     }
@@ -34,7 +35,7 @@ struct AlbumLinkView: View {
                 Text(enriched.albumDisplayText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
             }
         }
     }
@@ -56,43 +57,9 @@ struct MacNowPlayingHero: View {
         let accent = model.currentStation.accentColor
         let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
 
-        HStack(alignment: .center, spacing: 24) {
-            StationArtwork(
-                url: enriched?.artworkURL ?? detail?.imageURL,
-                fallbackURL: enriched != nil ? detail?.imageURL : nil,
-                size: 190
-            )
-            .shadow(color: accent.opacity(colorScheme == .dark ? 0.28 : 0.18), radius: 18, y: 10)
-            .accessibilityLabel(enriched?.albumTitle ?? model.currentStation.name)
-
-            VStack(alignment: .leading, spacing: 10) {
-                stationContext
-
-                Divider()
-                    .padding(.vertical, 4)
-
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(track?.displayTitle ?? "Loading now playing")
-                        .font(.title.weight(.bold))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
-                    // LibraryButton intentionally omitted on macOS — Apple's MusicLibrary.add
-                    // API isn't available there. Album line below carries the Apple Music link.
-                }
-
-                Text(track?.displayArtist ?? "Waiting for metadata")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                AlbumLinkView(enriched: enriched)
-
-                metadataLine
-
-                MacInlineTransportControls()
-                    .padding(.top, 4)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        ViewThatFits(in: .horizontal) {
+            wideHero
+            compactHero
         }
         .padding(22)
         .modifier(HeroCardBackground(accent: accent,
@@ -102,7 +69,64 @@ struct MacNowPlayingHero: View {
                                      elevation: .compact))
     }
 
-    private var stationContext: some View {
+    private var wideHero: some View {
+        HStack(alignment: .center, spacing: 24) {
+            heroArtwork(size: 190)
+            trackSummary(isCompact: false)
+        }
+        .frame(minWidth: 560, alignment: .leading)
+    }
+
+    private var compactHero: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            heroArtwork(size: 128)
+            trackSummary(isCompact: true)
+        }
+    }
+
+    private func heroArtwork(size: CGFloat) -> some View {
+        StationArtwork(
+            url: enriched?.artworkURL ?? detail?.imageURL,
+            fallbackURL: enriched != nil ? detail?.imageURL : nil,
+            size: size
+        )
+        .shadow(color: model.currentStation.accentColor.opacity(colorScheme == .dark ? 0.28 : 0.18), radius: 18, y: 10)
+        .accessibilityLabel(enriched?.albumTitle ?? model.currentStation.name)
+    }
+
+    private func trackSummary(isCompact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            stationContext(isCompact: isCompact)
+
+            Divider()
+                .padding(.vertical, 4)
+
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(track?.displayTitle ?? "Loading now playing")
+                    .font(.title.weight(.bold))
+                    .lineLimit(isCompact ? 3 : 2)
+                    .minimumScaleFactor(isCompact ? 1 : 0.8)
+                    .fixedSize(horizontal: false, vertical: true)
+                // LibraryButton intentionally omitted on macOS — Apple's MusicLibrary.add
+                // API isn't available there. Album line below carries the Apple Music link.
+            }
+
+            Text(track?.displayArtist ?? "Waiting for metadata")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .lineLimit(isCompact ? 2 : 1)
+
+            AlbumLinkView(enriched: enriched)
+
+            metadataLine
+
+            MacInlineTransportControls(isCompact: isCompact)
+                .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func stationContext(isCompact: Bool) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "dot.radiowaves.left.and.right")
                 .font(.caption.weight(.semibold))
@@ -111,7 +135,7 @@ struct MacNowPlayingHero: View {
             Text(model.currentStation.host)
                 .font(.callout.weight(.medium))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(isCompact ? 2 : 1)
         }
     }
 
@@ -139,8 +163,25 @@ struct MacNowPlayingHero: View {
 /// secondary actions (reconnect, mute) and the volume slider sharing one glass capsule.
 struct MacInlineTransportControls: View {
     @EnvironmentObject private var model: PlayerModel
+    var isCompact = false
 
     var body: some View {
+        if isCompact {
+            controls
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .appGlass(in: RoundedRectangle(cornerRadius: 16, style: .continuous), interactive: true)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            controls
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .appGlass(in: Capsule(), interactive: true)
+                .fixedSize(horizontal: true, vertical: true)
+        }
+    }
+
+    private var controls: some View {
         HStack(spacing: 8) {
             playButton
 
@@ -158,12 +199,9 @@ struct MacInlineTransportControls: View {
             .controlSize(.small)
             // Explicit width — `maxWidth` collapses to the slider's tiny intrinsic size
             // once the surrounding pill becomes fixedSize.
-            .frame(width: 180)
+            .frame(width: isCompact ? nil : 180)
+            .frame(minWidth: isCompact ? 80 : nil)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .appGlass(in: Capsule(), interactive: true)
-        .fixedSize(horizontal: true, vertical: true)
     }
 
     private var playButton: some View {
@@ -229,6 +267,7 @@ struct NowPlayingPanel: View {
     @EnvironmentObject private var metadata: MusicMetadataClient
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var detail: AndonStationDetail? { model.currentDetail }
     private var track: AndonTrack? { model.currentTrack }
@@ -239,33 +278,10 @@ struct NowPlayingPanel: View {
         let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
 
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 18) {
-                // Album art wins over station logo whenever iTunes Search returned a match.
-                // Station logo doubles as the fallback during the brief window before
-                // album bytes land, so we never flash a placeholder mid-transition.
-                StationArtwork(
-                    url: enriched?.artworkURL ?? detail?.imageURL,
-                    fallbackURL: enriched != nil ? detail?.imageURL : nil,
-                    size: 132
-                )
-                .accessibilityLabel(enriched?.albumTitle ?? model.currentStation.name)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    stationContext
-
-                    titleRow
-
-                    Text(trackStatusSubtitle)
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
-
-                    AlbumLinkView(enriched: enriched)
-
-                    metadataLine
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if dynamicTypeSize.isAccessibilitySize {
+                accessibilityHeader
+            } else {
+                standardHeader
             }
 
             TransportControls()
@@ -278,24 +294,89 @@ struct NowPlayingPanel: View {
                                      elevation: .lifted))
     }
 
-    private var titleRow: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(trackStatusTitle)
-                .font(.title2.weight(.bold))
-                .lineLimit(3)
-                .minimumScaleFactor(0.7)
-                .fixedSize(horizontal: false, vertical: true)
-
-            #if os(iOS)
-            // macOS surfaces the same affordance through the Apple Music URL on the album line —
-            // MusicLibrary.add() is iOS-only at the API level.
-            if let trackID = enriched?.trackID {
-                LibraryButton(trackID: trackID)
-                    .padding(.top, 3)
-            }
-            #endif
+    private var standardHeader: some View {
+        HStack(alignment: .top, spacing: 18) {
+            artwork(size: 132)
+            trackSummary
         }
     }
+
+    private var accessibilityHeader: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            artwork(size: 104)
+            trackSummary
+        }
+    }
+
+    private func artwork(size: CGFloat) -> some View {
+        // Album art wins over station logo whenever iTunes Search returned a match.
+        // Station logo doubles as the fallback during the brief window before
+        // album bytes land, so we never flash a placeholder mid-transition.
+        StationArtwork(
+            url: enriched?.artworkURL ?? detail?.imageURL,
+            fallbackURL: enriched != nil ? detail?.imageURL : nil,
+            size: size
+        )
+        .accessibilityLabel(enriched?.albumTitle ?? model.currentStation.name)
+    }
+
+    private var trackSummary: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            stationContext
+            titleRow
+
+            Text(trackStatusSubtitle)
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.8)
+
+            AlbumLinkView(enriched: enriched)
+            metadataLine
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var titleRow: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                titleText
+
+                #if os(iOS)
+                libraryButton
+                #endif
+            }
+        } else {
+            HStack(alignment: .top, spacing: 8) {
+                titleText
+
+                #if os(iOS)
+                libraryButton
+                    .padding(.top, 3)
+                #endif
+            }
+        }
+    }
+
+    private var titleText: some View {
+        Text(trackStatusTitle)
+            .font(.title2.weight(.bold))
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 5 : 3)
+            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.7)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    #if os(iOS)
+    @ViewBuilder
+    private var libraryButton: some View {
+        // macOS surfaces the same affordance through the Apple Music URL on the album line —
+        // MusicLibrary.add() is iOS-only at the API level.
+        if let trackID = enriched?.trackID {
+            LibraryButton(trackID: trackID)
+        }
+    }
+    #endif
 
     private var stationContext: some View {
         HStack(spacing: 8) {
@@ -306,7 +387,7 @@ struct NowPlayingPanel: View {
             Text(model.currentStation.host)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
         }
     }
 
@@ -347,31 +428,88 @@ struct NowPlayingPanel: View {
 
 struct TransportControls: View {
     @EnvironmentObject private var model: PlayerModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(spacing: 14) {
-            HStack {
-                Spacer(minLength: 0)
-                playButton
-                Spacer(minLength: 0)
+            if dynamicTypeSize.isAccessibilitySize {
+                accessibilityPlayButton
+            } else {
+                HStack {
+                    Spacer(minLength: 0)
+                    playButton
+                    Spacer(minLength: 0)
+                }
             }
 
-            HStack(spacing: 14) {
-                muteButton
-
-                Slider(value: Binding(
-                    get: { Double(model.volume) },
-                    set: { model.setVolume(Float($0)) }
-                ), in: 0 ... 1)
-                .tint(model.currentStation.accentColor)
-
-                routePicker
+            if dynamicTypeSize.isAccessibilitySize {
+                accessibilityOutputControls
+            } else {
+                standardOutputControls
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-            .appGlass(in: Capsule(), interactive: true)
+        }
+    }
+
+    private var standardOutputControls: some View {
+        HStack(spacing: 14) {
+            muteButton
+            volumeSlider
+            routePicker
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .appGlass(in: Capsule(), interactive: true)
+    }
+
+    private var accessibilityOutputControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                accessibilityMuteButton
+                accessibilityRoutePicker
+            }
+
+            accessibilityVolumeSlider
+        }
+        .foregroundStyle(.secondary)
+        .padding(12)
+        .appGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous), interactive: true)
+    }
+
+    private var volumeSlider: some View {
+        Slider(value: Binding(
+            get: { Double(model.volume) },
+            set: { model.setVolume(Float($0)) }
+        ), in: 0 ... 1)
+        .tint(model.currentStation.accentColor)
+    }
+
+    private var accessibilityVolumeSlider: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center) {
+                Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 44, height: 44)
+                    .accessibilityHidden(true)
+
+                Spacer(minLength: 8)
+
+                Text(volumePercentText)
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, minHeight: 54)
+            .background(Color.primary.opacity(0.05),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            volumeSlider
+                .accessibilityLabel("Volume")
+                .accessibilityValue(volumePercentText)
         }
     }
 
@@ -396,6 +534,40 @@ struct TransportControls: View {
             }
             .frame(width: 64, height: 64)
             .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.space, modifiers: [])
+        .help(playButtonHelp)
+        .accessibilityLabel(playButtonAccessibilityLabel)
+    }
+
+    private var accessibilityPlayButton: some View {
+        Button {
+            playHaptic()
+            model.togglePlayback()
+        } label: {
+            HStack(spacing: 12) {
+                if model.isBuffering {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .controlSize(.regular)
+                } else {
+                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.title3.weight(.semibold))
+                        .symbolRenderingMode(.monochrome)
+                }
+
+                Text(playButtonAccessibilityLabel)
+                    .font(.headline)
+
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.primary)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+            .padding(.horizontal, 16)
+            .background(model.currentStation.accentColor.opacity(0.18),
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
         .keyboardShortcut(.space, modifiers: [])
@@ -428,12 +600,45 @@ struct TransportControls: View {
         .accessibilityLabel(model.isMuted ? "Unmute" : "Mute")
     }
 
+    private var accessibilityMuteButton: some View {
+        Button {
+            model.toggleMute()
+        } label: {
+            Label(model.isMuted ? "Unmute" : "Mute",
+                  systemImage: model.isMuted ? "speaker.slash.fill" : "speaker.fill")
+                .labelStyle(.iconOnly)
+                .font(.system(size: 24, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: 54)
+                .foregroundStyle(.primary)
+                .background(Color.primary.opacity(0.05),
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(model.isMuted ? "Unmute" : "Mute")
+        .accessibilityLabel(model.isMuted ? "Unmute" : "Mute")
+    }
+
+    private var accessibilityRoutePicker: some View {
+        PlatformRoutePicker(player: model.routePickerPlayer)
+        .frame(maxWidth: .infinity, minHeight: 54)
+        .background(Color.primary.opacity(0.05),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .help("Choose AirPlay output")
+        .accessibilityLabel("Choose AirPlay output")
+    }
+
     private var routePicker: some View {
         PlatformRoutePicker(player: model.routePickerPlayer)
             .frame(width: 44, height: 44)
             .contentShape(Rectangle())
             .help("Choose AirPlay output")
             .accessibilityLabel("Choose AirPlay output")
+    }
+
+    private var volumePercentText: String {
+        "\(Int((model.volume * 100).rounded()))%"
     }
 }
 

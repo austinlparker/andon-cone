@@ -4,3 +4,5 @@ dist/
 .swiftpm/
 xcuserdata/
 *.xcuserstate
+analysis/
+.agents/skills/

@@ -6,7 +6,7 @@ import SwiftUI
 
 @main
 struct AndonConeApp: App {
-    @StateObject private var model = PlayerModel.shared
+    @StateObject private var model: PlayerModel
     @StateObject private var appChrome = AppChromeModel()
     @StateObject private var artworkCache = ArtworkCache()
     @StateObject private var metadata = MusicMetadataClient.shared
@@ -14,6 +14,8 @@ struct AndonConeApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        let processInfo = ProcessInfo.processInfo
+        _model = StateObject(wrappedValue: processInfo.isScreenshotAutomation ? PlayerModel.preview : PlayerModel.shared)
         configureCrashReporting()
     }
 
@@ -30,12 +32,12 @@ struct AndonConeApp: App {
                 .environmentObject(metadata)
                 .environmentObject(library)
                 .task {
-                    if !ProcessInfo.processInfo.isXcodePreview {
+                    if !ProcessInfo.processInfo.usesStaticPreviewData {
                         model.start()
                     }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
-                    if newPhase == .active, !ProcessInfo.processInfo.isXcodePreview {
+                    if newPhase == .active, !ProcessInfo.processInfo.usesStaticPreviewData {
                         model.refreshAllMetadata()
                     }
                 }
@@ -52,7 +54,7 @@ struct AndonConeApp: App {
 }
 
 private func configureCrashReporting() {
-    guard !ProcessInfo.processInfo.isXcodePreview else { return }
+    guard !ProcessInfo.processInfo.usesStaticPreviewData else { return }
 
     #if os(iOS)
     let options = Embrace.Options(appId: "7fxwh")

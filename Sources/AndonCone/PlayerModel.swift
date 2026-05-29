@@ -55,6 +55,7 @@ final class PlayerModel: ObservableObject {
     @Published private(set) var metadataErrorMessage: String?
 
     private var player: AVPlayer?
+    private var playerStation: Station?
     private var playerItemStatusObservation: NSKeyValueObservation?
     private var playerTimeControlObservation: NSKeyValueObservation?
     private var playbackNotificationObservers: [NSObjectProtocol] = []
@@ -66,6 +67,7 @@ final class PlayerModel: ObservableObject {
     private var artworkLoadingURLs: Set<URL> = []
     private let metadataClient = MusicMetadataClient.shared
     private var metadataVersionCancellable: AnyCancellable?
+    private var nowPlayingSession: MPNowPlayingSession?
     #endif
     private let apiClient: RadioAPI
     private let performsExternalEffects: Bool
@@ -77,7 +79,9 @@ final class PlayerModel: ObservableObject {
 
         if performsExternalEffects {
             configureAudioSession()
-            configureRemoteCommands()
+            #if os(iOS)
+            configureRemoteCommands(on: MPRemoteCommandCenter.shared())
+            #endif
             observeMetadataEnrichment()
         }
     }
@@ -104,9 +108,9 @@ final class PlayerModel: ObservableObject {
 
     func togglePlayback() {
         if isPlaying {
-            stopPlayback()
+            pausePlayback()
         } else {
-            startPlayback(for: currentStation)
+            resumePlayback()
         }
     }
 
@@ -115,7 +119,11 @@ final class PlayerModel: ObservableObject {
         // not a stream restart. CarPlay relies on this.
         guard station != currentStation || !isPlaying else { return }
         currentStation = station
-        startPlayback(for: station)
+        if playerStation == station {
+            resumePlayback()
+        } else {
+            startPlayback(for: station)
+        }
     }
 
     func reconnect() {
@@ -218,6 +226,10 @@ final class PlayerModel: ObservableObject {
         newPlayer.volume = volume
         newPlayer.isMuted = isMuted
         player = newPlayer
+        playerStation = station
+        #if os(iOS)
+        configureNowPlayingSession(for: newPlayer)
+        #endif
         isPlaying = true
         isBuffering = true
         updateNowPlayingInfo()
@@ -225,10 +237,46 @@ final class PlayerModel: ObservableObject {
         newPlayer.play()
     }
 
+    private func pausePlayback() {
+        guard performsExternalEffects else {
+            isPlaying = false
+            isBuffering = false
+            updateNowPlayingInfo()
+            return
+        }
+
+        player?.pause()
+        isPlaying = false
+        isBuffering = false
+        updateNowPlayingInfo()
+    }
+
+    private func resumePlayback() {
+        guard performsExternalEffects else {
+            isPlaying = true
+            updateNowPlayingInfo()
+            return
+        }
+
+        guard let player, playerStation == currentStation else {
+            startPlayback(for: currentStation)
+            return
+        }
+
+        isPlaying = true
+        isBuffering = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
+        updateNowPlayingInfo()
+        player.play()
+    }
+
     private func stopPlayback() {
         clearPlayerObservers()
         player?.pause()
         player = nil
+        playerStation = nil
+        #if os(iOS)
+        clearNowPlayingSession()
+        #endif
         isPlaying = false
         isBuffering = false
         updateNowPlayingInfo()
@@ -386,21 +434,19 @@ final class PlayerModel: ObservableObject {
         #endif
     }
 
-    private func configureRemoteCommands() {
-        #if os(iOS)
-        let commandCenter = MPRemoteCommandCenter.shared()
-
+    #if os(iOS)
+    private func configureRemoteCommands(on commandCenter: MPRemoteCommandCenter) {
         commandCenter.playCommand.addTarget { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                self.startPlayback(for: self.currentStation)
+                self.resumePlayback()
             }
             return .success
         }
 
         commandCenter.pauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in
-                self?.stopPlayback()
+                self?.pausePlayback()
             }
             return .success
         }
@@ -411,8 +457,34 @@ final class PlayerModel: ObservableObject {
             }
             return .success
         }
-        #endif
+
+        commandCenter.playCommand.isEnabled = true
+        commandCenter.pauseCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.isEnabled = true
+
+        disableUnsupportedRemoteCommands(on: commandCenter)
     }
+
+    private func disableUnsupportedRemoteCommands(on commandCenter: MPRemoteCommandCenter) {
+        [
+            commandCenter.stopCommand,
+            commandCenter.nextTrackCommand,
+            commandCenter.previousTrackCommand,
+            commandCenter.skipForwardCommand,
+            commandCenter.skipBackwardCommand,
+            commandCenter.seekForwardCommand,
+            commandCenter.seekBackwardCommand,
+            commandCenter.changePlaybackPositionCommand,
+            commandCenter.changePlaybackRateCommand,
+            commandCenter.changeRepeatModeCommand,
+            commandCenter.changeShuffleModeCommand,
+            commandCenter.ratingCommand,
+            commandCenter.likeCommand,
+            commandCenter.dislikeCommand,
+            commandCenter.bookmarkCommand
+        ].forEach { $0.isEnabled = false }
+    }
+    #endif
 
     private func observeMetadataEnrichment() {
         #if os(iOS)
@@ -436,6 +508,8 @@ final class PlayerModel: ObservableObject {
             MPMediaItemPropertyAlbumTitle: enriched?.albumTitle ?? currentStation.name,
             MPMediaItemPropertyTitle: enriched?.trackName ?? track?.displayTitle ?? currentStation.name,
             MPMediaItemPropertyArtist: enriched?.artistName ?? track?.displayArtist ?? currentStation.host,
+            MPMediaItemPropertyMediaType: NSNumber(value: MPMediaType.music.rawValue),
+            MPNowPlayingInfoPropertyMediaType: NSNumber(value: MPNowPlayingInfoMediaType.audio.rawValue),
             MPNowPlayingInfoPropertyIsLiveStream: true,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
         ]
@@ -447,14 +521,41 @@ final class PlayerModel: ObservableObject {
         applyNowPlayingArtwork(
             preferredURL: enriched?.artworkURL,
             fallbackURL: currentDetail?.imageURL,
+            station: currentStation,
             to: &info
         )
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+
+        if let nowPlayingSession {
+            nowPlayingSession.nowPlayingInfoCenter.nowPlayingInfo = info
+            nowPlayingSession.becomeActiveIfPossible { didBecomeActive in
+                if !didBecomeActive {
+                    NSLog("Andon Cone Now Playing session did not become active")
+                }
+            }
+        }
         #endif
     }
 
     #if os(iOS)
+    private func configureNowPlayingSession(for player: AVPlayer) {
+        let session = MPNowPlayingSession(players: [player])
+        session.automaticallyPublishesNowPlayingInfo = false
+        configureRemoteCommands(on: session.remoteCommandCenter)
+        nowPlayingSession = session
+        session.becomeActiveIfPossible { didBecomeActive in
+            if !didBecomeActive {
+                NSLog("Andon Cone Now Playing session did not become active")
+            }
+        }
+    }
+
+    private func clearNowPlayingSession() {
+        nowPlayingSession?.nowPlayingInfoCenter.nowPlayingInfo = nil
+        nowPlayingSession = nil
+    }
+
     private func enrichedCurrentTrack(for track: AndonTrack?) -> EnrichedTrack? {
         guard let track else { return nil }
         if let enriched = metadataClient.enriched(for: track) {
@@ -467,6 +568,7 @@ final class PlayerModel: ObservableObject {
     private func applyNowPlayingArtwork(
         preferredURL: URL?,
         fallbackURL: URL?,
+        station: Station,
         to info: inout [String: Any]
     ) {
         if let preferredURL {
@@ -477,11 +579,15 @@ final class PlayerModel: ObservableObject {
             loadNowPlayingArtwork(from: preferredURL, for: currentStation.id)
         }
 
-        guard let fallbackURL, fallbackURL != preferredURL else { return }
+        guard let fallbackURL, fallbackURL != preferredURL else {
+            info[MPMediaItemPropertyArtwork] = NowPlayingArtwork(station: station).mediaItemArtwork
+            return
+        }
         if let artwork = artworkByURL[fallbackURL] {
             info[MPMediaItemPropertyArtwork] = artwork.mediaItemArtwork
         } else {
             loadNowPlayingArtwork(from: fallbackURL, for: currentStation.id)
+            info[MPMediaItemPropertyArtwork] = NowPlayingArtwork(station: station).mediaItemArtwork
         }
     }
 

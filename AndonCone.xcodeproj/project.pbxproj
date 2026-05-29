@@ -94,6 +94,7 @@
 		100000000000000000000038 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		100000000000000000000039 /* RadioAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RadioAPIClient.swift; sourceTree = "<group>"; };
 		100000000000000000000040 /* CacheSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSupport.swift; sourceTree = "<group>"; };
+		100000000000000000000041 /* AndonCone.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = AndonCone.storekit; sourceTree = "<group>"; };
 		100000000000000000010001 /* AndonTrackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AndonTrackTests.swift; sourceTree = "<group>"; };
 		100000000000000000010002 /* BlockProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockProgressTests.swift; sourceTree = "<group>"; };
 		100000000000000000010003 /* CacheSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSupportTests.swift; sourceTree = "<group>"; };
@@ -173,6 +174,7 @@
 		100000000000000000000303 /* Config */ = {
 			isa = PBXGroup;
 			children = (
+				100000000000000000000041 /* AndonCone.storekit */,
 				100000000000000000000305 /* iOS */,
 				100000000000000000000306 /* macOS */,
 			);

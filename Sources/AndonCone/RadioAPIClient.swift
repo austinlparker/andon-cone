@@ -103,7 +103,63 @@ struct NowPlayingArtwork: @unchecked Sendable {
     let mediaItemArtwork: MPMediaItemArtwork
 
     init(image: UIImage) {
-        mediaItemArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        mediaItemArtwork = MPMediaItemArtwork(boundsSize: image.size) { requestedSize in
+            image.resizedForNowPlayingArtwork(targetSize: requestedSize)
+        }
+    }
+
+    init(station: Station) {
+        let image = UIImage.stationNowPlayingFallback(for: station)
+        mediaItemArtwork = MPMediaItemArtwork(boundsSize: image.size) { requestedSize in
+            image.resizedForNowPlayingArtwork(targetSize: requestedSize)
+        }
+    }
+}
+
+private extension UIImage {
+    func resizedForNowPlayingArtwork(targetSize: CGSize) -> UIImage {
+        guard targetSize.width > 0, targetSize.height > 0 else { return self }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
+            draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+    }
+
+    static func stationNowPlayingFallback(for station: Station) -> UIImage {
+        let size = CGSize(width: 512, height: 512)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = UIScreen.main.scale
+        format.opaque = true
+
+        let accent = UIColor(station.accentColor)
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            let rect = CGRect(origin: .zero, size: size)
+            UIColor(red: 0.05, green: 0.07, blue: 0.10, alpha: 1).setFill()
+            context.fill(rect)
+
+            accent.withAlphaComponent(0.9).setFill()
+            context.cgContext.fillEllipse(in: rect.insetBy(dx: 88, dy: 88))
+
+            UIColor.white.withAlphaComponent(0.92).setFill()
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 58, weight: .bold),
+                .foregroundColor: UIColor.white,
+                .paragraphStyle: paragraph
+            ]
+            let initials = station.name
+                .split(separator: " ")
+                .prefix(2)
+                .compactMap(\.first)
+                .map(String.init)
+                .joined()
+                .uppercased()
+            let textRect = CGRect(x: 64, y: 220, width: 384, height: 72)
+            initials.draw(with: textRect, options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes, context: nil)
+        }
     }
 }
 #endif

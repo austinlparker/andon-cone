@@ -50,7 +50,7 @@ Create these consumable products in App Store Connect before submitting a build 
 
 | Product ID | Suggested Reference Name | Suggested Price |
 | --- | --- | --- |
-| `io.aparker.andoncone.tip.small` | Small Tip | $0.99 |
+| `io.aparker.andoncone.tip.small` | Small Tip | $1.99 |
 | `io.aparker.andoncone.tip.medium` | Medium Tip | $4.99 |
 | `io.aparker.andoncone.tip.large` | Large Tip | $9.99 |
 
@@ -58,8 +58,8 @@ Suggested App Review note: "The Support Andon Cone screen contains optional Stor
 
 ## Requirements
 
-- macOS 13 (Ventura) or later for the macOS app
-- iOS/iPadOS 16 or later for the mobile app
+- macOS 14 or later for the macOS app
+- iOS/iPadOS 17 or later for the mobile app
 - Swift 6 toolchain
 - Xcode for iOS/iPadOS/CarPlay builds
 

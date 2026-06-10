@@ -110,10 +110,17 @@ struct AndonStationDetail: Decodable, Equatable, Sendable, Identifiable {
 
         struct Song: Decodable, Equatable, Sendable, Identifiable {
             let name: String
-            let artist: String
+            let artist: String?
             let count: Int
 
-            var id: String { "\(name)|\(artist)" }
+            var id: String { "\(name)|\(displayArtist)" }
+
+            var displayArtist: String {
+                guard let trimmed = artist?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !trimmed.isEmpty
+                else { return "Unknown artist" }
+                return trimmed
+            }
         }
 
         struct Genre: Decodable, Equatable, Sendable, Identifiable {

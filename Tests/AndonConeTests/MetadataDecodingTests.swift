@@ -64,6 +64,12 @@ final class MetadataDecodingTests: XCTestCase {
         XCTAssertEqual(song.id, "A|B")
     }
 
+    func testSongUsesFallbackForMissingArtist() {
+        let song = AndonStationDetail.ContentStats.Song(name: "Station Jingle", artist: nil, count: 3)
+        XCTAssertEqual(song.displayArtist, "Unknown artist")
+        XCTAssertEqual(song.id, "Station Jingle|Unknown artist")
+    }
+
     @MainActor
     func testStationCatalogHasUniqueIDs() {
         let ids = Set(PlayerModel.stations.map(\.id))
@@ -94,7 +100,7 @@ final class MetadataDecodingTests: XCTestCase {
         {
             "topSongsWeek": [
                 { "name": "Song A", "artist": "Artist A", "count": 7 },
-                { "name": "Song B", "artist": "Artist B", "count": 3 }
+                { "name": "Station Jingle", "artist": null, "count": 3 }
             ],
             "topGenres": [
                 { "name": "Synthwave", "count": 14, "percentage": 70 },
@@ -106,6 +112,7 @@ final class MetadataDecodingTests: XCTestCase {
         let stats = try decoder.decode(AndonStationDetail.ContentStats.self, from: json)
         XCTAssertEqual(stats.topSongsWeek?.count, 2)
         XCTAssertEqual(stats.topSongsWeek?.first?.id, "Song A|Artist A")
+        XCTAssertEqual(stats.topSongsWeek?.last?.displayArtist, "Unknown artist")
         XCTAssertEqual(stats.topGenres?.count, 2)
         XCTAssertEqual(stats.topGenres?.first?.percentage, 70)
         XCTAssertEqual(stats.topGenres?.first?.id, "Synthwave")

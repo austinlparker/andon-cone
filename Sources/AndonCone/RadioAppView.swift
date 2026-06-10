@@ -6,7 +6,6 @@ struct RadioAppView: View {
     @EnvironmentObject private var artworkCache: ArtworkCache
     @EnvironmentObject private var metadata: MusicMetadataClient
     @EnvironmentObject private var library: MusicLibraryService
-    @StateObject private var tipStore = TipStore()
     @State private var selectedTab: DetailTab = .schedule
     @State private var selectedStationID: Station.ID? = PlayerModel.stations[0].id
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
@@ -36,12 +35,7 @@ struct RadioAppView: View {
         .frame(minWidth: 720, idealWidth: 980, minHeight: 520, idealHeight: 680)
         #endif
         .sheet(isPresented: $appChrome.isShowingAbout) {
-            AboutView(store: tipStore)
-        }
-        .task {
-            if !ProcessInfo.processInfo.isXcodePreview {
-                await tipStore.loadProducts()
-            }
+            AboutView()
         }
         .onChange(of: model.currentStation.id) { _, stationID in
             selectedStationID = stationID

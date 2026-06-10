@@ -2,6 +2,8 @@
 
 A SwiftUI radio app for listening to the Andon FM streams without keeping the web page open. It supports iPhone, iPad, and macOS as native apps from one shared codebase. The iOS target also contains CarPlay scene code that can be enabled after Apple approves the managed CarPlay Audio entitlement.
 
+[Privacy Policy](PRIVACY.md)
+
 ## Streams
 
 The stream URLs are embedded in the server-rendered data on `https://andonlabs.com/radio`. Each one redirects through Live365 to an `audio/mpeg` stream.
@@ -41,20 +43,6 @@ The shared SwiftUI source lives in `Sources/AndonCone`.
 CarPlay requires Apple approval for the managed CarPlay Audio entitlement. Until that entitlement is added to the developer account and provisioning profile, leave `com.apple.developer.carplay-audio` out of the active entitlements file; otherwise Xcode cannot create a valid development profile for iPhone installs. The CarPlay scene configuration is present, but the app will not appear on a real CarPlay head unit until the entitlement is approved and re-added.
 
 The CarPlay implementation presents the station list with `CPListTemplate`; selecting a station starts playback and pushes the shared `CPNowPlayingTemplate`. The app publishes `MPNowPlayingInfoCenter` metadata, lock screen and Dynamic Island station artwork, and handles remote play/pause commands.
-
-## Optional Tips
-
-Andon Cone includes an optional StoreKit tip jar. Tips are consumable in-app purchases and do not unlock content, playback, metadata, CarPlay, or any other feature.
-
-Create these consumable products in App Store Connect before submitting a build that shows the tip jar:
-
-| Product ID | Suggested Reference Name | Suggested Price |
-| --- | --- | --- |
-| `io.aparker.andoncone.tip.small` | Small Tip | $1.99 |
-| `io.aparker.andoncone.tip.medium` | Medium Tip | $4.99 |
-| `io.aparker.andoncone.tip.large` | Large Tip | $9.99 |
-
-Suggested App Review note: "The Support Andon Cone screen contains optional StoreKit tips. Tips support app development and do not unlock content or functionality."
 
 ## Requirements
 

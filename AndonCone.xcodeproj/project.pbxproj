@@ -17,8 +17,6 @@
 		100000000000000000000108 /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000004 /* CarPlaySceneDelegate.swift */; };
 		100000000000000000000109 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000014 /* Assets.xcassets */; };
 		100000000000000000000110 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000014 /* Assets.xcassets */; };
-		100000000000000000000111 /* TipStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* TipStore.swift */; };
-		100000000000000000000112 /* TipStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* TipStore.swift */; };
 		100000000000000000000113 /* EmbraceIO in Frameworks */ = {isa = PBXBuildFile; productRef = 100000000000000000001001 /* EmbraceIO */; };
 		100000000000000000000119 /* ArtworkCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000006 /* ArtworkCache.swift */; };
 		100000000000000000000120 /* ArtworkCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000006 /* ArtworkCache.swift */; };
@@ -74,7 +72,6 @@
 		100000000000000000000002 /* PlayerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerModel.swift; sourceTree = "<group>"; };
 		100000000000000000000003 /* RadioAppView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RadioAppView.swift; sourceTree = "<group>"; };
 		100000000000000000000004 /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
-		100000000000000000000005 /* TipStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TipStore.swift; sourceTree = "<group>"; };
 		100000000000000000000006 /* ArtworkCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkCache.swift; sourceTree = "<group>"; };
 		100000000000000000000007 /* MusicMetadataClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicMetadataClient.swift; sourceTree = "<group>"; };
 		100000000000000000000008 /* MusicLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibraryService.swift; sourceTree = "<group>"; };
@@ -94,7 +91,6 @@
 		100000000000000000000038 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		100000000000000000000039 /* RadioAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RadioAPIClient.swift; sourceTree = "<group>"; };
 		100000000000000000000040 /* CacheSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSupport.swift; sourceTree = "<group>"; };
-		100000000000000000000041 /* AndonCone.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = AndonCone.storekit; sourceTree = "<group>"; };
 		100000000000000000010001 /* AndonTrackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AndonTrackTests.swift; sourceTree = "<group>"; };
 		100000000000000000010002 /* BlockProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockProgressTests.swift; sourceTree = "<group>"; };
 		100000000000000000010003 /* CacheSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSupportTests.swift; sourceTree = "<group>"; };
@@ -162,7 +158,6 @@
 				100000000000000000000032 /* Theme.swift */,
 				100000000000000000000031 /* TextFormatting.swift */,
 				100000000000000000000004 /* CarPlaySceneDelegate.swift */,
-				100000000000000000000005 /* TipStore.swift */,
 				100000000000000000000006 /* ArtworkCache.swift */,
 				100000000000000000000007 /* MusicMetadataClient.swift */,
 				100000000000000000000008 /* MusicLibraryService.swift */,
@@ -174,7 +169,6 @@
 		100000000000000000000303 /* Config */ = {
 			isa = PBXGroup;
 			children = (
-				100000000000000000000041 /* AndonCone.storekit */,
 				100000000000000000000305 /* iOS */,
 				100000000000000000000306 /* macOS */,
 			);
@@ -375,7 +369,6 @@
 				100000000000000000000132 /* Theme.swift in Sources */,
 				100000000000000000000131 /* TextFormatting.swift in Sources */,
 				100000000000000000000104 /* CarPlaySceneDelegate.swift in Sources */,
-				100000000000000000000111 /* TipStore.swift in Sources */,
 				100000000000000000000119 /* ArtworkCache.swift in Sources */,
 				100000000000000000000121 /* MusicMetadataClient.swift in Sources */,
 				100000000000000000000123 /* MusicLibraryService.swift in Sources */,
@@ -400,7 +393,6 @@
 				100000000000000000000232 /* Theme.swift in Sources */,
 				100000000000000000000231 /* TextFormatting.swift in Sources */,
 				100000000000000000000108 /* CarPlaySceneDelegate.swift in Sources */,
-				100000000000000000000112 /* TipStore.swift in Sources */,
 				100000000000000000000120 /* ArtworkCache.swift in Sources */,
 				100000000000000000000122 /* MusicMetadataClient.swift in Sources */,
 				100000000000000000000124 /* MusicLibraryService.swift in Sources */,

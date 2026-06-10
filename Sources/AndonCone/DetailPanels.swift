@@ -100,7 +100,7 @@ private struct TopTrackRow: View {
     }
 
     private var artistText: some View {
-        Text(song.artist)
+        Text(song.displayArtist)
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)

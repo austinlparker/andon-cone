@@ -27,8 +27,6 @@ The bundle identifier for both App Store platforms is `io.aparker.andoncone`.
 - Do not add `com.apple.developer.carplay-audio` until Apple approves the managed CarPlay Audio entitlement for the developer account and provisioning profile.
 - The macOS target uses App Sandbox and outgoing network client entitlements for Mac App Store submission.
 - `Config/macOS/Info.plist` must keep `LSApplicationCategoryType` set to `public.app-category.music`.
-- Optional tips use StoreKit consumable in-app purchases. Keep them optional and never gate playback, metadata, CarPlay, or any other app functionality behind a tip.
-- Tip product IDs are `io.aparker.andoncone.tip.small`, `io.aparker.andoncone.tip.medium`, and `io.aparker.andoncone.tip.large`.
 - iOS uses MusicKit for the add-to-library affordance. The capability is self-service (enable it on the App ID in the developer portal — no Apple review needed), and `NSAppleMusicUsageDescription` lives in `Config/iOS/Info.plist`. Keep library access optional; never gate playback or metadata on Apple Music sign-in or subscription. macOS deliberately does not expose an add-to-library button because `MusicLibrary.add()` is iOS-only and the read APIs are macOS 14+; the Apple Music link on the album line is the macOS equivalent.
 
 ## App Behavior
